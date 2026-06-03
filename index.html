@@ -193,7 +193,7 @@
 
                 <!-- 各種ヘッダー操作ボタン -->
                 <div class="flex items-center gap-2">
-                    <!-- モデルセレクター (ガイド特定用の重複IDを解決) -->
+                    <!-- モデルセレクター (安定稼働する最上位Llamaモデルのみ) -->
                     <select id="model-select" onchange="onModelChange()" class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none cursor-pointer">
                         <option value="lemon-grandpro">🍋 Lemon AI GrandPro (最高性能)</option>
                         <option value="lemon-sp">⚡ Lemon AI SP (高性能)</option>
@@ -221,7 +221,7 @@
 
             <!-- チャットメッセージコンテナ -->
             <div id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                <!-- ウェルカム（空チャットの時） -->
+                <!-- ウェルカム（空チャットの時 - ID「welcome-screen」を確実に付与） -->
                 <div id="welcome-screen" class="max-w-xl mx-auto my-12 text-center space-y-6">
                     <div class="inline-flex p-4 bg-yellow-100 dark:bg-yellow-950/40 text-yellow-600 dark:text-yellow-400 rounded-3xl shadow-inner">
                         <i data-lucide="sparkles" class="w-12 h-12"></i>
@@ -308,6 +308,8 @@
     </div>
 
     <script>
+        console.log("[⚙️ システム] Voton Lemon AI クライアントスクリプト読込中...");
+
         // ----------------------------------------------------
         // 基本アプリケーション・ステート
         // ----------------------------------------------------
@@ -340,7 +342,7 @@
             {
                 elementId: 'model-select',
                 title: '🧠 脳みそ(モデル)の切り替え',
-                body: '最高性能の「GrandPro」から、爆速な「Lite」まで4つの特性を持つGemma2などのモデルを自由に変更できます。'
+                body: '最高性能の「GrandPro」から、爆速な「Lite」まで4つの特性を持つモデルを自由に変更できます。'
             },
             {
                 elementId: 'guide-clear',
@@ -358,28 +360,37 @@
         // 初期化処理
         // ----------------------------------------------------
         window.addEventListener('DOMContentLoaded', () => {
+            console.log("[🚀 起動] DOMContentLoaded が発生しました。初期化を開始します。");
             lucide.createIcons();
             
             // テーマの適用
+            console.log(`[🚀 起動] 設定テーマを適用中: ${currentTheme}`);
             applyTheme(currentTheme);
 
             // チャットリストの準備
+            console.log(`[🚀 起動] 保存されているチャット数を読み込み中: ${chats.length} 件`);
             if (chats.length === 0) {
+                console.log("[🚀 起動] 保存されたチャットがないため、新規スレッドを立ち上げます。");
                 createNewChat();
             } else {
                 renderChatList();
                 if (activeChatId) {
+                    console.log(`[🚀 起動] 前回のアクティブチャットを復元中: ID ${activeChatId}`);
                     selectChat(activeChatId);
                 } else {
+                    console.log(`[🚀 起動] 最初のスレッドを読み込み中: ID ${chats[0].id}`);
                     selectChat(chats[0].id);
                 }
             }
 
             // 初回訪問時のみ自動でチュートリアルを起動
             const hasVisited = localStorage.getItem('voton_has_visited');
+            console.log(`[🚀 起動] 過去の訪問履歴の有無: ${hasVisited ? 'あり' : 'なし (新規訪問)'}`);
             if (!hasVisited) {
+                console.log("[🚀 起動] 自動でウォークスルーチュートリアルを開始します。");
                 startTutorial();
             }
+            console.log("[🚀 起動] クライアント側の初期化処理がすべて正常終了しました！");
         });
 
         // ----------------------------------------------------
@@ -387,13 +398,13 @@
         // ----------------------------------------------------
         function toggleTheme() {
             currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            console.log(`[🎨 テーマ変更] テーマを切り替えます: ${currentTheme}`);
             applyTheme(currentTheme);
             localStorage.setItem('voton_theme', currentTheme);
         }
 
         function applyTheme(theme) {
             const themeIcon = document.getElementById('theme-icon');
-
             if (theme === 'dark') {
                 document.documentElement.classList.add('dark');
                 themeIcon.setAttribute('data-lucide', 'moon');
@@ -410,6 +421,7 @@
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             sidebar.classList.toggle('-translate-x-full');
+            console.log(`[📱 サイドバー] トグル切り替えを実行しました。現在表示: ${!sidebar.classList.contains('-translate-x-full')}`);
         }
 
         // ----------------------------------------------------
@@ -421,6 +433,7 @@
             const privateIcon = document.getElementById('private-icon');
             
             isPrivateMode = toggle.checked;
+            console.log(`[🕵️ プライベートモード] 切り替えが検出されました。現在有効: ${isPrivateMode}`);
 
             if (isPrivateMode) {
                 alertBar.classList.remove('hidden');
@@ -448,6 +461,7 @@
         // チャットデータの管理
         // ----------------------------------------------------
         function createNewChat() {
+            console.log("[📁 データ] 新しいスレッドの作成を開始します...");
             const defaultPrompt = 'あなたは優秀なAIアシスタントです。質問に対して簡潔に、正確に回答してください。';
             const newChat = {
                 id: 'chat_' + Date.now(),
@@ -465,24 +479,27 @@
                 renderChatList();
                 selectChat(newChat.id);
             } else {
-                // プライベートモードのときはメモリ内の一時スレッドにする
+                console.log("[📁 データ] プライベートモード中のため、メモリ上のみに新規一時スレッドを割り当てます。");
                 chats = [newChat];
                 selectChat(newChat.id);
                 renderChatList();
             }
+            console.log(`[📁 データ] 新規スレッドのセットアップが完了しました。ID: ${newChat.id}`);
         }
 
         function selectChat(chatId) {
+            console.log(`[📁 データ] スレッド選択要求。ID: ${chatId}`);
             let chat = chats.find(c => c.id === chatId);
             
             // 安全なフォールバック設計：
-            // activeChatIdが破損していたり、古い無効なIDだった場合は、
-            // 履歴の最初の会話、または新規作成して強制リカバリーします（サイレント死防止）
             if (!chat) {
+                console.log("[⚠️ 警告] 指定されたスレッドが見つかりません。自動復旧を試みます...");
                 if (chats.length > 0) {
                     chatId = chats[0].id;
                     chat = chats[0];
+                    console.log(`[📁 データ] 保存履歴の最初のスレッドを読み込みます。ID: ${chatId}`);
                 } else {
+                    console.log("[📁 データ] 保存履歴が完全に空のため、新規チャットを作成します。");
                     createNewChat();
                     return;
                 }
@@ -493,12 +510,28 @@
                 localStorage.setItem('voton_active_chat_id', chatId);
             }
 
+            // UIへの設定反映
             document.getElementById('current-chat-title').innerText = chat.title;
-            document.getElementById('model-select').value = chat.modelKey || 'lemon-normal';
-            document.getElementById('sys-prompt-select').value = chat.promptSelect || 'lemon';
-            document.getElementById('temp-slider').value = chat.temperature !== undefined ? chat.temperature : 0.7;
             
-            // 画面モデル表示と温度の更新
+            const modelSelect = document.getElementById('model-select');
+            if (modelSelect) {
+                modelSelect.value = chat.modelKey || 'lemon-normal';
+                console.log(`[UI更新] モデル選択値を復元: ${modelSelect.value}`);
+            }
+
+            const sysSelect = document.getElementById('sys-prompt-select');
+            if (sysSelect) {
+                sysSelect.value = chat.promptSelect || 'lemon';
+                console.log(`[UI更新] キャラクター性格の値を復元: ${sysSelect.value}`);
+            }
+
+            const slider = document.getElementById('temp-slider');
+            if (slider) {
+                slider.value = chat.temperature !== undefined ? chat.temperature : 0.7;
+                console.log(`[UI更新] 回答の柔軟性スライダーの値を復元: ${slider.value}`);
+            }
+            
+            // 各種ラベル更新
             updateModelLabel(chat.modelKey || 'lemon-normal');
             updateTempDisplay();
             applyPromptTemplate();
@@ -517,6 +550,7 @@
 
         function deleteChat(chatId, event) {
             event.stopPropagation();
+            console.log(`[📁 データ] スレッド削除要求。ID: ${chatId}`);
             
             chats = chats.filter(c => c.id !== chatId);
             if (chats.length === 0) {
@@ -534,6 +568,7 @@
         }
 
         function clearCurrentChat() {
+            console.log(`[🗑️ 操作] アクティブなスレッドID: ${activeChatId} の全メッセージ削除要求。`);
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat) return;
 
@@ -548,8 +583,12 @@
         }
 
         function saveChatsToStorage() {
-            if (isPrivateMode) return; // プライベートモードのときは何もしない
+            if (isPrivateMode) {
+                console.log("[📁 データ] プライベートモード中につきローカルストレージへの書き込みをスキップします。");
+                return; 
+            }
             localStorage.setItem('voton_chats', JSON.stringify(chats));
+            console.log("[📁 データ] ローカルストレージにスレッドデータを正常保存しました。");
         }
 
         // ----------------------------------------------------
@@ -557,6 +596,7 @@
         // ----------------------------------------------------
         function renderChatList() {
             const container = document.getElementById('chat-list');
+            if (!container) return;
             container.innerHTML = '';
 
             chats.forEach(chat => {
@@ -585,18 +625,31 @@
         }
 
         function renderMessages() {
+            console.log("[🔄 レンダリング] メッセージの描画処理を開始します...");
             const chat = chats.find(c => c.id === activeChatId);
             const container = document.getElementById('chat-messages');
             const welcomeScreen = document.getElementById('welcome-screen');
 
-            if (!chat || chat.messages.length === 0) {
-                container.innerHTML = '';
-                container.appendChild(welcomeScreen);
-                welcomeScreen.classList.remove('hidden');
+            if (!container) {
+                console.error("[❌ エラー] メッセージ表示エリア (chat-messages) がDOM上に見つかりません！");
                 return;
             }
 
-            welcomeScreen.classList.add('hidden');
+            if (!chat || chat.messages.length === 0) {
+                console.log("[🔄 レンダリング] メッセージがないため、ウェルカムスクリーンを表示します。");
+                container.innerHTML = '';
+                if (welcomeScreen) {
+                    container.appendChild(welcomeScreen);
+                    welcomeScreen.classList.remove('hidden');
+                }
+                return;
+            }
+
+            // クラッシュ完全ガード：welcomeScreenが存在するかチェックしてから操作
+            if (welcomeScreen) {
+                console.log("[🔄 レンダリング] ウェルカムスクリーンを非表示に設定します。");
+                welcomeScreen.classList.add('hidden');
+            }
             container.innerHTML = '';
 
             chat.messages.forEach((msg, idx) => {
@@ -621,7 +674,7 @@
                 const contentColumn = document.createElement('div');
                 contentColumn.className = "flex-grow flex flex-col overflow-x-auto";
 
-                // 本文テキスト (ストリーミング描画を確実にするため専用識別クラス「response-text-content」を付与)
+                // 本文テキスト
                 const textContainer = document.createElement('div');
                 textContainer.className = "text-xs md:text-sm leading-relaxed space-y-2 response-text-content";
                 
@@ -633,7 +686,7 @@
 
                 contentColumn.appendChild(textContainer);
 
-                // メタ情報 (コピーボタンは、エラーを完全に防ぐためにインデックスによる取得方式に刷新)
+                // メタ情報 (コピーボタン)
                 if (!isUser) {
                     const meta = document.createElement('div');
                     meta.className = "flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 dark:text-slate-500";
@@ -660,6 +713,7 @@
 
             lucide.createIcons();
             container.scrollTop = container.scrollHeight;
+            console.log("[🔄 レンダリング] メッセージ描画とスクロールを正常に完了しました。");
         }
 
         // ----------------------------------------------------
@@ -667,25 +721,39 @@
         // ----------------------------------------------------
         async function handleSendMessage(event) {
             if (event) event.preventDefault();
-            if (isGenerating) return;
+            if (isGenerating) {
+                console.log("[💬 送信防止] 現在生成中のため送信処理を無視します。");
+                return;
+            }
+
+            console.log("[💬 送信開始] 送信処理が呼び出されました。");
 
             const inputEl = document.getElementById('user-input');
-            const messageText = inputEl.value.trim();
-            if (!messageText) return;
+            const messageText = inputEl.value ? inputEl.value.trim() : '';
+            if (!messageText) {
+                console.log("[💬 送信防止] 入力テキストが空であるため送信を中断します。");
+                return;
+            }
 
-            // 送信時のスレッド自動復旧＆再取得（サイレントクラッシュの完全防止）
+            console.log(`[💬 送信情報] 入力テキスト: "${messageText}"`);
+
+            // 送信時のスレッド自動復旧＆再取得
             let chat = chats.find(c => c.id === activeChatId);
             if (!chat) {
+                console.log("[⚠️ 送信異常] 送信要求されたアクティブスレッドが見つかりません。復旧処理を開始...");
                 if (chats.length > 0) {
                     activeChatId = chats[0].id;
                     chat = chats[0];
+                    console.log(`[⚠️ 送信異常] 最初の既存スレッドで強制復旧: ID ${activeChatId}`);
                 } else {
                     createNewChat();
                     chat = chats[0];
+                    console.log(`[⚠️ 送信異常] スレッド新規作成で強制復旧: ID ${chat.id}`);
                 }
             }
 
             if (!chat) {
+                console.error("[❌ 致命的エラー] チャットデータを構築できませんでした。");
                 showToast("有効なチャットが見つかりませんでした。再度お試しください。", "error");
                 return;
             }
@@ -717,6 +785,7 @@
             });
             renderMessages();
 
+            console.log(`[🚀 通信準備] APIストリーミングリクエスト要求を開始。スレッドインデックス: ${aiMsgIndex}`);
             await streamAIResponse(chat, aiMsgIndex);
         }
 
@@ -729,7 +798,8 @@
             const chatPayload = [];
             let currentSystemPrompt = chat.systemPrompt || '';
             if (chat.promptSelect === 'custom') {
-                currentSystemPrompt = document.getElementById('custom-sys-prompt-input').value.trim() || '優秀なAIアシスタントです。';
+                const customPromptEl = document.getElementById('custom-sys-prompt-input');
+                currentSystemPrompt = customPromptEl ? (customPromptEl.value.trim() || '優秀なAIアシスタントです。') : '優秀なAIアシスタントです。';
             }
             
             chatPayload.push({
@@ -742,6 +812,9 @@
             history.forEach(m => {
                 chatPayload.push({ role: m.role, content: m.content });
             });
+
+            console.log(`[🌐 API通信] POST /api/chat へデータを送信します。送信データ数: ${chatPayload.length}`);
+            console.log(`[🌐 API通信] ペイロード: modelKey="${chat.modelKey}", temperature=${chat.temperature}`);
 
             const chatMessagesContainer = document.getElementById('chat-messages');
 
@@ -757,15 +830,25 @@
                     signal: abortController.signal
                 });
 
-                if (!response.ok) throw new Error('通信エラーが発生しました。');
+                console.log(`[🌐 API通信] サーバーから応答を受信しました。ステータス: ${response.status} (${response.statusText})`);
+
+                if (!response.ok) {
+                    throw new Error(`サーバーエラー。ステータスコード: ${response.status}`);
+                }
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder('utf-8');
                 let accumulatedText = '';
+                let chunkSeq = 0;
+
+                console.log("[🌐 API通信] ストリーミングデータの解読(Reader)を開始します...");
 
                 while (true) {
                     const { done, value } = await reader.read();
-                    if (done) break;
+                    if (done) {
+                        console.log("[🌐 API通信] ストリーム送信が正常終了(done)に達しました。");
+                        break;
+                    }
 
                     const chunk = decoder.decode(value, { stream: true });
                     const lines = chunk.split('\n\n');
@@ -775,6 +858,7 @@
                         if (!cleanedLine) continue;
 
                         if (cleanedLine === 'data: [DONE]') {
+                            console.log("[🌐 API通信] Groqの完了メッセージ [DONE] をキャッチしました。");
                             break;
                         }
 
@@ -785,10 +869,15 @@
                                     throw new Error(parsed.error);
                                 }
                                 if (parsed.text) {
+                                    chunkSeq++;
                                     accumulatedText += parsed.text;
                                     chat.messages[aiMsgIndex].content = accumulatedText;
+                                    
+                                    // リアルタイムにDOMを部分更新
                                     updateLastAIMessageUI(accumulatedText);
-                                    chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                                    if (chatMessagesContainer) {
+                                        chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                                    }
                                 }
                             } catch (e) {
                                 // 不完全なJSONはスキップ
@@ -797,11 +886,14 @@
                     }
                 }
 
+                console.log(`[🎉 描画成功] AIの返答が完全に終了しました。総受信回数: ${chunkSeq}回, 文字数: ${accumulatedText.length}文字`);
+
             } catch (error) {
                 if (error.name === 'AbortError') {
+                    console.log("[🌐 API通信] 生成がユーザーによって停止されました。");
                     showToast('生成を停止しました', 'info');
                 } else {
-                    console.error(error);
+                    console.error("[❌ 通信エラー] fetchまたは解析中に致命的な例外が発生しました:", error);
                     chat.messages[aiMsgIndex].content = `⚠️ エラーが発生しました。時間を置いてやり直してください。\n\n詳細: ${error.message}`;
                     updateLastAIMessageUI(chat.messages[aiMsgIndex].content);
                     showToast('AIのレスポンス取得に失敗しました', 'error');
@@ -817,6 +909,7 @@
         // リアルタイムに文字を描画するためのDOM書き換えヘルパー
         function updateLastAIMessageUI(text) {
             const container = document.getElementById('chat-messages');
+            if (!container) return;
             const lastMessageWrapper = container.lastElementChild;
             if (!lastMessageWrapper) return;
             const textEl = lastMessageWrapper.querySelector('.response-text-content');
@@ -826,11 +919,15 @@
         }
 
         function cancelGeneration() {
-            if (abortController) abortController.abort();
+            if (abortController) {
+                console.log("[🛑 操作] ユーザーが生成中止ボタンを押しました。通信を切断します...");
+                abortController.abort();
+            }
         }
 
         // 安全なインデックス指定型コピー機能（パースエラーを100%防止）
         function copyMessageByIndex(index, button) {
+            console.log(`[📋 コピー] メッセージインデックス ${index} のテキスト取得要求。`);
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat || !chat.messages[index]) {
                 showToast("コピー対象のデータが見つかりませんでした", "error");
@@ -863,6 +960,7 @@
         function toggleButtonStates(loading) {
             const sendBtn = document.getElementById('send-btn');
             const stopBtn = document.getElementById('stop-btn');
+            if (!sendBtn || !stopBtn) return;
             if (loading) {
                 sendBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
@@ -879,8 +977,11 @@
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat) return;
 
-            const selectedModel = document.getElementById('model-select').value;
+            const modelSelect = document.getElementById('model-select');
+            if (!modelSelect) return;
+            const selectedModel = modelSelect.value;
             chat.modelKey = selectedModel;
+            console.log(`[🧠 設定変更] 使用モデルを変更しました: ${selectedModel}`);
             updateModelLabel(selectedModel);
             saveChatsToStorage();
             showToast('モデルを切り替えました！', 'success');
@@ -893,33 +994,42 @@
                 'lemon-normal': '✨ Lemon AI (普通)',
                 'lemon-lite': '🚀 Lemon AI Lite (超爆速)'
             };
-            document.getElementById('active-model-text').innerText = labelMap[modelKey] || 'Lemon AI';
+            const label = labelMap[modelKey] || 'Lemon AI';
+            const labelEl = document.getElementById('active-model-text');
+            if (labelEl) {
+                labelEl.innerText = label;
+            }
+            console.log(`[UI更新] ヘッダーのモデルラベルを変更しました: "${label}"`);
         }
 
         function applyPromptTemplate() {
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat) return;
 
-            const select = document.getElementById('sys-prompt-select').value;
+            const sysSelect = document.getElementById('sys-prompt-select');
+            if (!sysSelect) return;
+            const select = sysSelect.value;
             const customPromptInput = document.getElementById('custom-prompt-container');
             
             chat.promptSelect = select;
+            console.log(`[🎭 設定変更] キャラクター性格テンプレート: "${select}"`);
 
             const promptTemplates = {
                 'lemon': 'あなたは「Voton Lemon AI」という名前の爽やかで明るいAIアシスタントです。レモンにまつわる面白い例えや、甘酸っぱく爽やかな言葉遣いを時折交えながら、親切で元気に回答してください。',
-                'teacher': 'あなたは「優秀な学校 of 先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
+                'teacher': 'あなたは「優秀な学校の先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
                 'friend': 'あなたはフレンドリーな「友達」です。丁寧語は使わず、完全にフランクなタメ口で話し、共感を重視した絵文字を使いながら回答してください。',
                 'coder': 'あなたは世界トップクラスの「プログラマー」です。プログラムコードを出力する際はMarkdownのコードブロックを使用し、各コードにわかりやすい日本語のコメント・解説をつけて最高効率なコードのみを提示してください。',
                 'custom': ''
             };
 
             if (select === 'custom') {
-                customPromptInput.classList.remove('hidden');
+                if (customPromptInput) customPromptInput.classList.remove('hidden');
                 if (chat.systemPrompt) {
-                    document.getElementById('custom-sys-prompt-input').value = chat.systemPrompt;
+                    const customSysInput = document.getElementById('custom-sys-prompt-input');
+                    if (customSysInput) customSysInput.value = chat.systemPrompt;
                 }
             } else {
-                customPromptInput.classList.add('hidden');
+                if (customPromptInput) customPromptInput.classList.add('hidden');
                 chat.systemPrompt = promptTemplates[select];
             }
 
@@ -927,18 +1037,22 @@
         }
 
         // カスタムプロンプト入力時の自動保存
-        document.getElementById('custom-sys-prompt-input').addEventListener('input', (e) => {
-            const chat = chats.find(c => c.id === activeChatId);
-            if (chat) {
-                chat.systemPrompt = e.target.value.trim();
-                saveChatsToStorage();
-            }
-        });
+        const customSysPromptInput = document.getElementById('custom-sys-prompt-input');
+        if (customSysPromptInput) {
+            customSysPromptInput.addEventListener('input', (e) => {
+                const chat = chats.find(c => c.id === activeChatId);
+                if (chat) {
+                    chat.systemPrompt = e.target.value.trim();
+                    saveChatsToStorage();
+                }
+            });
+        }
 
         function updateTempDisplay() {
             const chat = chats.find(c => c.id === activeChatId);
             const slider = document.getElementById('temp-slider');
             const display = document.getElementById('temp-display-val');
+            if (!slider || !display) return;
             
             const val = parseFloat(slider.value);
             
@@ -959,8 +1073,10 @@
         // チュートリアル（ウォークスルーガイド）
         // ----------------------------------------------------
         function startTutorial() {
+            console.log("[🎓 チュートリアル] ガイドを開始します。");
             tutorialStep = 0;
-            document.getElementById('tutorial-overlay').classList.remove('hidden');
+            const overlay = document.getElementById('tutorial-overlay');
+            if (overlay) overlay.classList.remove('hidden');
             showTutorialStep();
         }
 
@@ -969,12 +1085,14 @@
             const element = document.getElementById(step.elementId);
             const card = document.getElementById('tutorial-card');
 
+            console.log(`[🎓 チュートリアル] ステップ ${tutorialStep + 1}/${tutorialSteps.length}: ターゲット要素ID "${step.elementId}"`);
+
             // すべてのハイライトをリセット
             document.querySelectorAll('.tutorial-highlight').forEach(el => {
                 el.classList.remove('tutorial-highlight');
             });
 
-            if (element) {
+            if (element && card) {
                 // 対象要素にスポットライト（ハイライト）をあてる
                 element.classList.add('tutorial-highlight');
                 
@@ -992,10 +1110,8 @@
                     targetLeft = (viewportWidth - Math.min(viewportWidth - 32, cardWidth)) / 2;
                     
                     if (rect.top > viewportHeight / 2) {
-                        // ターゲットが画面の下半分（入力欄など）➔ カードを画面上部に置く
                         targetTop = 40; 
                     } else {
-                        // ターゲットが画面の上半分 ➔ カードを画面下部に置く
                         targetTop = viewportHeight - cardHeight - 60;
                     }
                 } else {
@@ -1025,14 +1141,19 @@
             }
 
             // カードテキスト更新
-            document.getElementById('tutorial-title').innerText = step.title;
-            document.getElementById('tutorial-body').innerText = step.body;
-            
+            const titleEl = document.getElementById('tutorial-title');
+            const bodyEl = document.getElementById('tutorial-body');
             const btnText = document.getElementById('tutorial-btn-text');
-            if (tutorialStep === tutorialSteps.length - 1) {
-                btnText.innerText = "ガイドを完了！";
-            } else {
-                btnText.innerText = "次へ";
+            
+            if (titleEl) titleEl.innerText = step.title;
+            if (bodyEl) bodyEl.innerText = step.body;
+            
+            if (btnText) {
+                if (tutorialStep === tutorialSteps.length - 1) {
+                    btnText.innerText = "ガイドを完了！";
+                } else {
+                    btnText.innerText = "次へ";
+                }
             }
         }
 
@@ -1046,11 +1167,13 @@
         }
 
         function skipTutorial() {
+            console.log("[🎓 チュートリアル] ガイドを正常終了しました。");
             // スポットライト全解除
             document.querySelectorAll('.tutorial-highlight').forEach(el => {
                 el.classList.remove('tutorial-highlight');
             });
-            document.getElementById('tutorial-overlay').classList.add('hidden');
+            const overlay = document.getElementById('tutorial-overlay');
+            if (overlay) overlay.classList.add('hidden');
             localStorage.setItem('voton_has_visited', 'true');
             showToast('チュートリアルが完了しました！チャットへようこそ！', 'success');
         }
@@ -1061,20 +1184,24 @@
         function handleTextareaKeydown(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
-                document.getElementById('chat-form').requestSubmit();
+                const form = document.getElementById('chat-form');
+                if (form) form.requestSubmit();
             }
         }
 
         const textarea = document.getElementById('user-input');
-        textarea.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
-        });
+        if (textarea) {
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+        }
 
         function showToast(message, type = 'info') {
             const toast = document.getElementById('toast');
             const text = document.getElementById('toast-text');
             const icon = document.getElementById('toast-icon');
+            if (!toast || !text || !icon) return;
 
             text.innerText = message;
             
