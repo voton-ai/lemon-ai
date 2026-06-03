@@ -4,6 +4,7 @@
  * - フロントエンドの「index.html」を安全に配信します。
  * - バックエンドとして、Groq APIとの通信を安全に中継(Proxy)し、APIキーを完全に隠蔽します。
  * - クライアント側へイベントストリーム(SSE)で回答をリアルタイム返却します。
+ * - Groqで廃止されたモデル(gemma2-9b-itなど)を、現在確実に稼働している最新のLlamaモデル群に修正しました。
  */
 
 const express = require('express');
@@ -22,11 +23,12 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // --- APIエンドポイント: モデルマッピング ---
+// Groq Cloudで現在公式にサポートされ、確実に動作する最新モデルに差し替えました
 const MODEL_MAPPING = {
-    'lemon-grandpro': 'llama-3.3-70b-versatile', // 最高性能モデル
-    'lemon-sp': 'qwen-2.5-coder-32b',            // 性能少し高い
-    'lemon-normal': 'gemma2-9b-it',               // 普通 (Google Gemma 2)
-    'lemon-lite': 'llama-3.1-8b-instant'          // 性能低いが超爆速
+    'lemon-grandpro': 'llama-3.3-70b-versatile', // 最高性能 (Llama 3.3 70B)
+    'lemon-sp': 'llama-3.1-8b-instant',          // 高性能 (Llama 3.1 8B)
+    'lemon-normal': 'llama-3.2-3b-preview',      // 普通 (Llama 3.2 3B) - 廃止されたGemma2の代替
+    'lemon-lite': 'llama-3.2-1b-preview'         // 爆速 (Llama 3.2 1B)
 };
 
 // --- APIエンドポイント: チャットストリーミング中継プロキシ ---
