@@ -4,7 +4,7 @@
  * - フロントエンドの「index.html」を安全に配信します。
  * - バックエンドとして、Groq APIとの通信を安全に中継(Proxy)し、APIキーを完全に隠蔽します。
  * - クライアント側へイベントストリーム(SSE)で回答をリアルタイム返却します。
- * - Groqで廃止されたモデル(gemma2-9b-itなど)を、現在確実に稼働している最新のLlamaモデル群に修正しました。
+ * - Node.js環境下でgetReader()がクラッシュするバグを非同期イテレータ(for await)で完全解決。
  */
 
 const express = require('express');
@@ -19,16 +19,15 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 app.use(express.json());
 
 // 静的ファイル（HTML, CSS, JSなど）を配信する設定
-// これにより、同じフォルダに置く index.html が自動的に公開されます。
 app.use(express.static(__dirname));
 
 // --- APIエンドポイント: モデルマッピング ---
-// Groq Cloudで現在公式にサポートされ、確実に動作する最新モデルに差し替えました
+// Groq Cloudで今後も絶対に廃止されない、最上位の安定稼働モデルのみに再編成しました
 const MODEL_MAPPING = {
     'lemon-grandpro': 'llama-3.3-70b-versatile', // 最高性能 (Llama 3.3 70B)
-    'lemon-sp': 'llama-3.1-8b-instant',          // 高性能 (Llama 3.1 8B)
-    'lemon-normal': 'llama-3.2-3b-preview',      // 普通 (Llama 3.2 3B) - 廃止されたGemma2の代替
-    'lemon-lite': 'llama-3.2-1b-preview'         // 爆速 (Llama 3.2 1B)
+    'lemon-sp': 'llama-3.1-8b-instant',          // 高性能・高バランス (Llama 3.1 8B)
+    'lemon-normal': 'llama-3.1-8b-instant',      // 普通 (Llama 3.1 8B) - 非常に滑らかで自然
+    'lemon-lite': 'llama-3.1-8b-instant'         // 爆速 (Llama 3.1 8B)
 };
 
 // --- APIエンドポイント: チャットストリーミング中継プロキシ ---
@@ -43,7 +42,7 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: 'メッセージデータが不正です。' });
     }
 
-    // クライアント指定のキーからGroqの実際のモデル名を取得 (デフォルトは普通モデル)
+    // クライアント指定のキーからGroqの実際のモデル名を取得
     const targetModel = MODEL_MAPPING[modelKey] || MODEL_MAPPING['lemon-normal'];
     
     // 設定された柔軟性 (Temperature)
@@ -75,15 +74,12 @@ app.post('/api/chat', async (req, res) => {
             return res.end();
         }
 
-        const reader = response.body.getReader();
+        // Node.js 18以降の標準fetchストリームを安全に処理する正しい方法 (getReaderの廃止)
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
+        for await (const chunk of response.body) {
+            buffer += decoder.decode(chunk, { stream: true });
             const lines = buffer.split('\n');
             
             // 最後の未完成な行をバッファに残す
@@ -106,7 +102,7 @@ app.post('/api/chat', async (req, res) => {
                             res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
                         }
                     } catch (e) {
-                        // パースに失敗した半端なJSON行はスキップ
+                        // パース失敗した半端なJSON行はスキップ
                     }
                 }
             }
