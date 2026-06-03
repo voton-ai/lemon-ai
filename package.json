@@ -1,0 +1,17 @@
+{
+  "name": "voton-lemon-ai",
+  "version": "2.1.0",
+  "description": "Voton Lemon AI - ずっと、自由に。なんでも質問しよう。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Voton <voton.admin@gmail.com>",
+  "license": "MIT"
+}
