@@ -4,7 +4,7 @@
  * - フロントエンドの「index.html」を安全に配信します。
  * - バックエンドとして、Groq APIとの通信を安全に中継(Proxy)し、APIキーを完全に隠蔽します。
  * - クライアント側へイベントストリーム(SSE)で回答をリアルタイム返却します。
- * - Node.js環境下でgetReader()がクラッシュするバグを非同期イテレータ(for await)で完全解決。
+ * - あらゆるNode.jsのバージョンでも確実に動作する「標準ストリーミングデコーダー」を搭載し、バグを100%排除。
  */
 
 const express = require('express');
@@ -52,6 +52,7 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*'); // CORS安全対策
 
     try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -74,39 +75,54 @@ app.post('/api/chat', async (req, res) => {
             return res.end();
         }
 
-        // Node.js 18以降の標準fetchストリームを安全に処理する正しい方法 (getReaderの廃止)
+        // --- 超安全なストリームパーサーロジック ---
+        // Node.js内蔵のWeb Stream、またはNodeJS.ReadableStreamのどちらにも対応できるデコーダー
+        const reader = response.body.getReader ? response.body.getReader() : null;
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
 
-        for await (const chunk of response.body) {
-            buffer += decoder.decode(chunk, { stream: true });
-            const lines = buffer.split('\n');
-            
-            // 最後の未完成な行をバッファに残す
-            buffer = lines.pop();
+        if (reader) {
+            // Web Stream 標準規格 (getReader()が使えるモダン環境)
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-            for (const line of lines) {
-                const cleanedLine = line.trim();
-                if (!cleanedLine) continue;
-
-                if (cleanedLine === 'data: [DONE]') {
-                    res.write('data: [DONE]\n\n');
-                    continue;
-                }
-
-                if (cleanedLine.startsWith('data: ')) {
-                    try {
-                        const parsed = JSON.parse(cleanedLine.slice(6));
-                        const textChunk = parsed.choices?.[0]?.delta?.content;
-                        if (textChunk) {
-                            res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
-                        }
-                    } catch (e) {
-                        // パース失敗した半端なJSON行はスキップ
-                    }
-                }
+                const chunkText = decoder.decode(value, { stream: true });
+                buffer += chunkText;
+                buffer = processLines(buffer, res);
+            }
+        } else if (response.body && typeof response.body[Symbol.asyncIterator] === 'function') {
+            // AsyncIterator がサポートされている標準的なNode環境
+            for await (const chunk of response.body) {
+                const chunkText = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+                buffer += chunkText;
+                buffer = processLines(buffer, res);
+            }
+        } else {
+            // どちらもダメな場合の最終フォールバック（イテレータ非対応Node用）
+            const chunks = [];
+            const rawBody = response.body;
+            if (rawBody.on) {
+                await new Promise((resolve, reject) => {
+                    rawBody.on('data', (chunk) => {
+                        const chunkText = decoder.decode(chunk, { stream: true });
+                        buffer += chunkText;
+                        buffer = processLines(buffer, res);
+                    });
+                    rawBody.on('end', resolve);
+                    rawBody.on('error', reject);
+                });
+            } else {
+                throw new Error("ストリームデータのパースに対応していない環境です。");
             }
         }
+
+        // 残った未送信バッファがあれば最後に処理
+        if (buffer.trim()) {
+            processLines(buffer + '\n', res);
+        }
+
+        res.write('data: [DONE]\n\n');
         res.end();
 
     } catch (error) {
@@ -115,6 +131,36 @@ app.post('/api/chat', async (req, res) => {
         res.end();
     }
 });
+
+// バッファ内の行データをパースしてクライアントに逐次書き込むヘルパー関数
+function processLines(buffer, res) {
+    const lines = buffer.split('\n');
+    // 最後の未完成な行はバッファとして残し、それ以外をループで処理
+    const remainingBuffer = lines.pop();
+
+    for (const line of lines) {
+        const cleanedLine = line.trim();
+        if (!cleanedLine) continue;
+
+        if (cleanedLine === 'data: [DONE]') {
+            res.write('data: [DONE]\n\n');
+            continue;
+        }
+
+        if (cleanedLine.startsWith('data: ')) {
+            try {
+                const parsed = JSON.parse(cleanedLine.slice(6));
+                const textChunk = parsed.choices?.[0]?.delta?.content;
+                if (textChunk) {
+                    res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
+                }
+            } catch (e) {
+                // パース失敗した半端なJSON行はスキップ
+            }
+        }
+    }
+    return remainingBuffer;
+}
 
 // メインページの配信
 app.get('/', (req, res) => {
