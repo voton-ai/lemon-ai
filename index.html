@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voton Lemon AI</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Tailwindのダークモードをクラス制御に設定
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        lemon: {
+                            50: '#fefdf0',
+                            100: '#fdfbe1',
+                            200: '#faf3b4',
+                            300: '#f6e67b',
+                            400: '#edd13e',
+                            500: '#deba1f',
+                            600: '#c09514',
+                            700: '#996e12',
+                            800: '#7e5714',
+                            900: '#6c4a16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Markdown Parser (Marked) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* テーマごとのトランジション */
+        body {
+            transition: background-color 0.3s, color 0.3s;
+        }
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(156, 163, 175, 0.3);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(156, 163, 175, 0.5);
+        }
+        /* チュートリアル用のスポットライト効果 */
+        .tutorial-highlight {
+            position: relative;
+            z-index: 100 !important;
+            box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.8) !important;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body id="app-body" class="h-full text-slate-800 bg-amber-50/40 dark:text-slate-100 dark:bg-slate-900 flex flex-col font-sans">
+
+    <div class="flex h-full w-full overflow-hidden relative">
+
+        <!-- サイドバー (履歴と各種カスタマイズ機能) -->
+        <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-80 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out bg-white dark:bg-slate-950 border-r border-amber-100 dark:border-slate-800 flex flex-col shadow-xl lg:shadow-none">
+            
+            <!-- サイドバーヘッダー -->
+            <div class="p-4 border-b border-amber-100 dark:border-slate-800 flex justify-between items-center bg-gradient-to-r from-amber-50 to-yellow-50/30 dark:from-slate-900/50 dark:to-slate-950/50">
+                <div class="flex items-center space-x-2.5">
+                    <span class="p-2 bg-yellow-400 text-slate-900 rounded-xl shadow-sm">
+                        <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    </span>
+                    <span class="font-extrabold text-lg text-slate-800 dark:text-white tracking-wider">Voton Lemon AI</span>
+                </div>
+                <!-- 閉じるボタン（スマホ表示用） -->
+                <button onclick="toggleSidebar()" class="lg:hidden p-2 hover:bg-amber-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- 新規スレッド作成エリア -->
+            <div class="p-4" id="guide-newchat">
+                <button onclick="createNewChat()" class="w-full flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-slate-900 rounded-xl font-bold transition-all duration-200 shadow-md hover:shadow-lg">
+                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                    新しい会話を始める
+                </button>
+            </div>
+
+            <!-- プライベートモードスイッチ -->
+            <div class="px-4 py-2 border-b border-amber-50 dark:border-slate-850" id="guide-private">
+                <div class="flex items-center justify-between p-3 bg-amber-50/40 dark:bg-slate-900/40 rounded-xl border border-amber-100/50 dark:border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="eye-off" class="w-4 h-4 text-amber-600 dark:text-amber-400" id="private-icon"></i>
+                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300">プライベートモード</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="private-toggle" onchange="togglePrivateMode()" class="sr-only peer">
+                        <div class="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- チャット履歴タイトル -->
+            <div class="px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                チャット履歴
+            </div>
+
+            <!-- チャット履歴リスト -->
+            <div class="flex-1 overflow-y-auto px-2 py-1 space-y-1" id="chat-list">
+                <!-- 過去の履歴がJavaScriptで動的に入ります -->
+            </div>
+
+            <!-- AIカスタマイズパネル -->
+            <div class="p-4 border-t border-amber-100 dark:border-slate-800 bg-amber-50/20 dark:bg-slate-900/20 space-y-4" id="guide-custom">
+                <div class="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                    <i data-lucide="sliders" class="w-4 h-4 text-amber-500"></i>
+                    <span>AIをカスタマイズ設定</span>
+                </div>
+
+                <!-- キャラクター性格選択 -->
+                <div class="space-y-1.5">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400">性格テンプレート</label>
+                    <select id="sys-prompt-select" onchange="applyPromptTemplate()" class="w-full bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none">
+                        <option value="lemon">🍋 爽やかレモン (親切＆元気)</option>
+                        <option value="teacher">🎓 優秀な先生 (わかりやすく指導)</option>
+                        <option value="friend">💬 フレンズ風 (フランクな友達)</option>
+                        <option value="coder">💻 プログラマー (解説付きコード生成)</option>
+                        <option value="custom">✍️ フルカスタム (自由に指示を打ち込む)</option>
+                    </select>
+                </div>
+
+                <!-- カスタムシステムプロンプト（「フルカスタム」のときだけ表示） -->
+                <div id="custom-prompt-container" class="hidden space-y-1.5 animate-fadeIn">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400">自由に入力する指示</label>
+                    <textarea id="custom-sys-prompt-input" rows="3" placeholder="例: あなたはツンデレな妹です。日本語でツンツンしながら回答してください。" class="w-full bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-yellow-400 outline-none resize-none"></textarea>
+                </div>
+
+                <!-- 回答の柔軟性 (Temperature) -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        <span>回答の柔軟性</span>
+                        <span id="temp-display-val" class="text-amber-600 dark:text-amber-400 font-mono">普通 (0.7)</span>
+                    </div>
+                    <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.1" value="0.7" oninput="updateTempDisplay()" class="w-full h-1.5 bg-amber-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500">
+                    <div class="flex justify-between text-[9px] text-slate-400">
+                        <span>論理的・正確</span>
+                        <span>独創的・創造的</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- サポート & チュートリアル再開 -->
+            <div class="p-3 border-t border-amber-100 dark:border-slate-800 bg-amber-50/50 dark:bg-slate-950/50 flex gap-2">
+                <button onclick="startTutorial()" class="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white dark:bg-slate-900 hover:bg-amber-100 dark:hover:bg-slate-800 border border-amber-200 dark:border-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 rounded-lg transition-colors">
+                    <i data-lucide="help-circle" class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400"></i>
+                    操作ガイドを見る
+                </button>
+            </div>
+        </aside>
+
+        <!-- メインチャットエリア -->
+        <main class="flex-grow flex flex-col h-full relative overflow-hidden bg-amber-50/10 dark:bg-slate-900 lg:ml-80">
+            
+            <!-- 上部ヘッダー -->
+            <header class="h-16 border-b border-amber-100 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-30">
+                <div class="flex items-center gap-3">
+                    <!-- サイドバー開閉ボタン（スマホ表示用） -->
+                    <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-600 dark:text-slate-400 hover:bg-amber-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+                        <i data-lucide="menu" class="w-6 h-6"></i>
+                    </button>
+                    <div>
+                        <h2 id="current-chat-title" class="font-extrabold text-sm md:text-base text-slate-800 dark:text-slate-100 truncate max-w-[150px] sm:max-w-xs">新しい会話</h2>
+                        <div class="flex items-center gap-1.5 mt-0.5">
+                            <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span id="active-model-text" class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold">Lemon AI</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 各種ヘッダー操作ボタン -->
+                <div class="flex items-center gap-2">
+                    <!-- モデルセレクター -->
+                    <select id="model-select" onchange="onModelChange()" class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none cursor-pointer" id="guide-model">
+                        <option value="lemon-grandpro">🍋 Lemon AI GrandPro (最高性能)</option>
+                        <option value="lemon-sp">⚡ Lemon AI SP (高性能)</option>
+                        <option value="lemon-normal" selected>✨ Lemon AI (普通)</option>
+                        <option value="lemon-lite">🚀 Lemon AI Lite (超爆速)</option>
+                    </select>
+
+                    <!-- ライト・ダーク切り替えボタン -->
+                    <button onclick="toggleTheme()" class="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-amber-100 dark:hover:bg-slate-800 rounded-xl transition-all" title="テーマ切り替え">
+                        <i data-lucide="sun" id="theme-icon" class="w-5 h-5"></i>
+                    </button>
+
+                    <!-- 会話リセットボタン -->
+                    <button onclick="clearCurrentChat()" class="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-all" title="このチャットをクリア" id="guide-clear">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- プライベートモード警告表示（プライベートモードONのときだけ表示） -->
+            <div id="private-alert-bar" class="hidden bg-purple-600 text-white text-center py-1.5 px-4 text-xs font-bold shadow-inner flex items-center justify-center gap-1.5 z-20">
+                <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                プライベートモード作動中 - 履歴や設定はこのセッション限りで自動消去されます
+            </div>
+
+            <!-- チャットメッセージコンテナ -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                <!-- ウェルカム（空チャットの時） -->
+                <div id="welcome-screen" class="max-w-xl mx-auto my-12 text-center space-y-6">
+                    <div class="inline-flex p-4 bg-yellow-100 dark:bg-yellow-950/40 text-yellow-600 dark:text-yellow-400 rounded-3xl shadow-inner">
+                        <i data-lucide="sparkles" class="w-12 h-12"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h1 class="text-3xl font-black text-slate-800 dark:text-white tracking-tight">Voton Lemon AI</h1>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm font-semibold">
+                            完全無料・無制限・誰でも一瞬で使えるカスタマイズAIチャット
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-left">
+                        <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
+                            <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
+                                <i data-lucide="sliders" class="w-3.5 h-3.5"></i> 自由な調整
+                            </span>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">左メニューからいつでもAIの性格をカスタマイズ可能。</p>
+                        </div>
+                        <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
+                            <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
+                                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 秘密を守る
+                            </span>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">プライベートモードならブラウザに一切足跡を残しません。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 入力フォームエリア -->
+            <footer class="p-4 border-t border-amber-100 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md sticky bottom-0 z-10" id="guide-input">
+                <div class="max-w-4xl mx-auto relative">
+                    <form id="chat-form" onsubmit="handleSendMessage(event)" class="relative bg-amber-50/50 dark:bg-slate-900 border border-amber-200 dark:border-slate-800 focus-within:border-yellow-400 focus-within:bg-white dark:focus-within:bg-slate-950 rounded-2xl shadow-lg transition-all overflow-hidden">
+                        <textarea 
+                            id="user-input" 
+                            rows="2"
+                            placeholder="Gemmaにメッセージを送信... (Shift + Enter で改行)" 
+                            class="w-full pl-4 pr-16 py-3.5 bg-transparent border-0 outline-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm md:text-base resize-none"
+                            onkeydown="handleTextareaKeydown(event)"
+                        ></textarea>
+                        
+                        <!-- 送信・停止コントロールボタン -->
+                        <div class="absolute right-3 bottom-3 flex items-center gap-2">
+                            <!-- 生成停止ボタン -->
+                            <button id="stop-btn" type="button" onclick="cancelGeneration()" class="hidden p-2 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/30 rounded-xl transition-all" title="出力を一時停止">
+                                <i data-lucide="square" class="w-5 h-5 fill-rose-500"></i>
+                            </button>
+                            <!-- 送信ボタン -->
+                            <button id="send-btn" type="submit" class="p-2.5 text-slate-900 bg-yellow-400 hover:bg-yellow-300 rounded-xl transition-all shadow-md shadow-yellow-200">
+                                <i data-lucide="send" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- ===== インタラクティブチュートリアルガイド (オーバーレイ) ===== -->
+    <div id="tutorial-overlay" class="fixed inset-0 z-50 hidden bg-slate-950/70 backdrop-blur-sm pointer-events-auto">
+        <!-- 案内カード -->
+        <div id="tutorial-card" class="absolute bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 p-6 rounded-2xl border-2 border-yellow-400 shadow-2xl w-full max-w-sm space-y-4 transition-all duration-300 z-[101]">
+            <div class="flex items-center gap-2">
+                <span class="p-1.5 bg-yellow-100 dark:bg-yellow-950/40 text-yellow-600 dark:text-yellow-400 rounded-lg">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                </span>
+                <h4 class="font-black text-slate-800 dark:text-white text-sm md:text-base" id="tutorial-title">チュートリアル</h4>
+            </div>
+            <p class="text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed" id="tutorial-body">
+                テキスト解説が入ります。
+            </p>
+            <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button onclick="skipTutorial()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold">スキップする</button>
+                <button onclick="nextTutorialStep()" class="py-2 px-4 bg-yellow-400 hover:bg-yellow-300 text-slate-950 text-xs font-black rounded-lg shadow flex items-center gap-1">
+                    <span id="tutorial-btn-text">次へ</span>
+                    <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UIトースト通知 -->
+    <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 border border-slate-800 px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-sm text-white">
+        <i id="toast-icon" data-lucide="info" class="w-4 h-4 text-yellow-400"></i>
+        <span id="toast-text">通知内容</span>
+    </div>
+
+    <script>
+        // ----------------------------------------------------
+        // 基本アプリケーション・ステート
+        // ----------------------------------------------------
+        let currentTheme = localStorage.getItem('voton_theme') || 'light';
+        let isPrivateMode = false;
+        
+        let chats = JSON.parse(localStorage.getItem('voton_chats') || '[]');
+        let activeChatId = localStorage.getItem('voton_active_chat_id') || null;
+        let isGenerating = false;
+        let abortController = null;
+
+        // チュートリアルの進行管理
+        let tutorialStep = 0;
+        const tutorialSteps = [
+            {
+                elementId: 'guide-newchat',
+                title: '新規チャットの作成 🍋',
+                body: 'ここを押すと、新しく空のスレッドを作成してチャットを始めることができます！会話は自動的に保存されます。'
+            },
+            {
+                elementId: 'guide-private',
+                title: '🕵️ プライベートモード',
+                body: '誰にも会話を見られたくない時にONにします。履歴やカスタム設定がブラウザから一切消え去る秘密モードです。'
+            },
+            {
+                elementId: 'guide-custom',
+                title: '🛠️ AIを自由自在にカスタマイズ',
+                body: 'AIに「ツンデレな妹」や「優秀な先生」などの役割を即座に与えたり、クリエイティブさ（Temperature）を調整できます。'
+            },
+            {
+                elementId: 'model-select',
+                title: '🧠 脳みそ(モデル)の切り替え',
+                body: '最高性能の「GrandPro」から、爆速な「Lite」まで4つの特性を持つGemma2などのモデルを自由に変更できます。'
+            },
+            {
+                elementId: 'guide-clear',
+                title: '🗑️ 会話履歴のリセット',
+                body: 'スレッドをサクッとリセットしたいとき、このボタンを押すことで今のチャット履歴を一括消去できます。'
+            },
+            {
+                elementId: 'guide-input',
+                title: '✏️ メッセージを入力してスタート！',
+                body: '準備ができたら、ここに聞きたいことを入力して送信してみましょう！無制限にいつでも会話できます。'
+            }
+        ];
+
+        // ----------------------------------------------------
+        // 初期化処理
+        // ----------------------------------------------------
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            
+            // テーマの適用
+            applyTheme(currentTheme);
+
+            // チャットリストの準備
+            if (chats.length === 0) {
+                createNewChat();
+            } else {
+                renderChatList();
+                if (activeChatId) {
+                    selectChat(activeChatId);
+                } else {
+                    selectChat(chats[0].id);
+                }
+            }
+
+            // 初回訪問時のみ自動でチュートリアルを起動
+            const hasVisited = localStorage.getItem('voton_has_visited');
+            if (!hasVisited) {
+                startTutorial();
+            }
+        });
+
+        // ----------------------------------------------------
+        // テーマ（ライト・ダーク）制御
+        // ----------------------------------------------------
+        function toggleTheme() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            applyTheme(currentTheme);
+            localStorage.setItem('voton_theme', currentTheme);
+        }
+
+        function applyTheme(theme) {
+            const themeIcon = document.getElementById('theme-icon');
+
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else {
+                document.documentElement.classList.remove('dark');
+                themeIcon.setAttribute('data-lucide', 'sun');
+            }
+            lucide.createIcons();
+        }
+
+        // ----------------------------------------------------
+        // サイドバー制御
+        // ----------------------------------------------------
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('-translate-x-full');
+        }
+
+        // ----------------------------------------------------
+        // プライベートモードのトグル
+        // ----------------------------------------------------
+        function togglePrivateMode() {
+            const toggle = document.getElementById('private-toggle');
+            const alertBar = document.getElementById('private-alert-bar');
+            const privateIcon = document.getElementById('private-icon');
+            
+            isPrivateMode = toggle.checked;
+
+            if (isPrivateMode) {
+                alertBar.classList.remove('hidden');
+                privateIcon.classList.remove('text-amber-600', 'dark:text-amber-400');
+                privateIcon.classList.add('text-purple-500');
+                showToast('プライベートモードを有効化しました', 'success');
+                
+                // 会話をリセットしてローカル保存をブロック
+                createNewChat();
+            } else {
+                alertBar.classList.add('hidden');
+                privateIcon.classList.add('text-amber-600', 'dark:text-amber-400');
+                privateIcon.classList.remove('text-purple-500');
+                showToast('プライベートモードをOFFにしました。履歴保存が再開されます。', 'info');
+                
+                // 復旧のためにチャットリストをリロード
+                chats = JSON.parse(localStorage.getItem('voton_chats') || '[]');
+                if (chats.length === 0) createNewChat();
+                else selectChat(chats[0].id);
+            }
+            lucide.createIcons();
+        }
+
+        // ----------------------------------------------------
+        // チャットデータの管理
+        // ----------------------------------------------------
+        function createNewChat() {
+            const defaultPrompt = 'あなたは優秀なAIアシスタントです。質問に対して簡潔に、正確に回答してください。';
+            const newChat = {
+                id: 'chat_' + Date.now(),
+                title: '新しい会話',
+                modelKey: 'lemon-normal',
+                systemPrompt: defaultPrompt,
+                temperature: 0.7,
+                promptSelect: 'lemon',
+                messages: []
+            };
+
+            if (!isPrivateMode) {
+                chats.unshift(newChat);
+                saveChatsToStorage();
+                renderChatList();
+                selectChat(newChat.id);
+            } else {
+                // プライベートモードのときはメモリ内の一時スレッドにする
+                chats = [newChat];
+                selectChat(newChat.id);
+                renderChatList();
+            }
+        }
+
+        function selectChat(chatId) {
+            activeChatId = chatId;
+            if (!isPrivateMode) {
+                localStorage.setItem('voton_active_chat_id', chatId);
+            }
+            
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+
+            document.getElementById('current-chat-title').innerText = chat.title;
+            document.getElementById('model-select').value = chat.modelKey || 'lemon-normal';
+            document.getElementById('sys-prompt-select').value = chat.promptSelect || 'lemon';
+            document.getElementById('temp-slider').value = chat.temperature !== undefined ? chat.temperature : 0.7;
+            
+            // 画面モデル表示と温度の更新
+            updateModelLabel(chat.modelKey);
+            updateTempDisplay();
+            applyPromptTemplate();
+
+            renderMessages();
+            renderChatList();
+
+            // レスポンシブ用：スマホサイズなら選択時にサイドバーを閉じる
+            if (window.innerWidth < 1024) {
+                const sidebar = document.getElementById('sidebar');
+                if (!sidebar.classList.contains('-translate-x-full')) {
+                    sidebar.classList.add('-translate-x-full');
+                }
+            }
+        }
+
+        function deleteChat(chatId, event) {
+            event.stopPropagation();
+            
+            chats = chats.filter(c => c.id !== chatId);
+            if (chats.length === 0) {
+                activeChatId = null;
+                createNewChat();
+            } else {
+                if (activeChatId === chatId) {
+                    activeChatId = chats[0].id;
+                }
+                saveChatsToStorage();
+                renderChatList();
+                selectChat(activeChatId);
+            }
+            showToast("スレッドを削除しました", "info");
+        }
+
+        function clearCurrentChat() {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            chat.messages = [];
+            chat.title = "新しい会話";
+            if (!isPrivateMode) {
+                saveChatsToStorage();
+            }
+            renderMessages();
+            renderChatList();
+            showToast("会話履歴をリセットしました", "info");
+        }
+
+        function saveChatsToStorage() {
+            if (isPrivateMode) return; // プライベートモードのときは何もしない
+            localStorage.setItem('voton_chats', JSON.stringify(chats));
+        }
+
+        // ----------------------------------------------------
+        // UIレンダリング
+        // ----------------------------------------------------
+        function renderChatList() {
+            const container = document.getElementById('chat-list');
+            container.innerHTML = '';
+
+            chats.forEach(chat => {
+                const isActive = chat.id === activeChatId;
+                const activeClass = isActive 
+                    ? 'bg-amber-100 dark:bg-slate-800 text-slate-900 dark:text-white border-l-4 border-yellow-500 font-bold' 
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-amber-50 dark:hover:bg-slate-900/40 hover:text-slate-900 dark:hover:text-slate-200';
+                
+                const item = document.createElement('div');
+                item.className = `group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${activeClass}`;
+                item.setAttribute('onclick', `selectChat('${chat.id}')`);
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2 overflow-hidden w-full">
+                        <i data-lucide="message-square" class="w-4 h-4 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}"></i>
+                        <span class="text-xs truncate w-full">${escapeHtml(chat.title)}</span>
+                    </div>
+                    <button onclick="deleteChat('${chat.id}', event)" class="p-1 opacity-0 group-hover:opacity-100 hover:bg-amber-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-rose-500 transition-all shrink-0">
+                        <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+                    </button>
+                `;
+                container.appendChild(item);
+            });
+
+            lucide.createIcons();
+        }
+
+        function renderMessages() {
+            const chat = chats.find(c => c.id === activeChatId);
+            const container = document.getElementById('chat-messages');
+            const welcomeScreen = document.getElementById('welcome-screen');
+
+            if (!chat || chat.messages.length === 0) {
+                container.innerHTML = '';
+                container.appendChild(welcomeScreen);
+                welcomeScreen.classList.remove('hidden');
+                return;
+            }
+
+            welcomeScreen.classList.add('hidden');
+            container.innerHTML = '';
+
+            chat.messages.forEach((msg, idx) => {
+                const isUser = msg.role === 'user';
+                const wrapper = document.createElement('div');
+                wrapper.className = `flex w-full ${isUser ? 'justify-end' : 'justify-start'} animate-fadeIn`;
+
+                const inner = document.createElement('div');
+                inner.className = `max-w-[85%] md:max-w-2xl flex gap-3 p-4 rounded-2xl ${
+                    isUser 
+                        ? 'bg-yellow-400 text-slate-900 shadow-md rounded-tr-none' 
+                        : 'bg-white dark:bg-slate-950 border border-amber-100/60 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-none shadow-sm'
+                }`;
+
+                // アイコン
+                const iconContainer = document.createElement('div');
+                iconContainer.className = `w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
+                    isUser ? 'bg-yellow-50 dark:bg-yellow-950/40 text-slate-950 dark:text-yellow-400' : 'bg-amber-100 dark:bg-slate-900 text-amber-600 dark:text-amber-400'
+                }`;
+                iconContainer.innerHTML = isUser ? '<i data-lucide="user" class="w-4 h-4"></i>' : '<i data-lucide="sparkles" class="w-4 h-4"></i>';
+
+                const contentColumn = document.createElement('div');
+                contentColumn.className = "flex-grow flex flex-col overflow-x-auto";
+
+                // 本文テキスト
+                const textContainer = document.createElement('div');
+                textContainer.className = "text-xs md:text-sm leading-relaxed space-y-2";
+                
+                if (isUser) {
+                    textContainer.innerText = msg.content;
+                } else {
+                    textContainer.innerHTML = marked.parse(msg.content);
+                }
+
+                contentColumn.appendChild(textContainer);
+
+                // メタ情報 (コピーなど)
+                if (!isUser) {
+                    const meta = document.createElement('div');
+                    meta.className = "flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 dark:text-slate-500";
+                    meta.innerHTML = `
+                        <span>${msg.time ? new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                        <button onclick="copyToClipboard(this, \`${msg.content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" class="hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition-colors">
+                            <i data-lucide="copy" class="w-3 h-3"></i> コピー
+                        </button>
+                    `;
+                    contentColumn.appendChild(meta);
+                }
+
+                if (isUser) {
+                    inner.appendChild(contentColumn);
+                    inner.appendChild(iconContainer);
+                } else {
+                    inner.appendChild(iconContainer);
+                    inner.appendChild(contentColumn);
+                }
+
+                wrapper.appendChild(inner);
+                container.appendChild(wrapper);
+            });
+
+            lucide.createIcons();
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ----------------------------------------------------
+        // メッセージ送信 & API処理
+        // ----------------------------------------------------
+        async function handleSendMessage(event) {
+            if (event) event.preventDefault();
+            if (isGenerating) return;
+
+            const inputEl = document.getElementById('user-input');
+            const messageText = inputEl.value.trim();
+            if (!messageText) return;
+
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            // ユーザーメッセージを追加
+            chat.messages.push({
+                role: 'user',
+                content: messageText,
+                time: Date.now()
+            });
+
+            if (chat.title === '新しい会話') {
+                chat.title = messageText.length > 15 ? messageText.substring(0, 15) + '...' : messageText;
+            }
+
+            inputEl.value = '';
+            inputEl.style.height = 'auto'; // 入力欄高さをリセット
+            
+            saveChatsToStorage();
+            renderChatList();
+            renderMessages();
+
+            // AIメッセージ用プレースホルダー
+            const aiMsgIndex = chat.messages.length;
+            chat.messages.push({
+                role: 'assistant',
+                content: '',
+                time: Date.now()
+            });
+            renderMessages();
+
+            await streamAIResponse(chat, aiMsgIndex);
+        }
+
+        async function streamAIResponse(chat, aiMsgIndex) {
+            isGenerating = true;
+            toggleButtonStates(true);
+            abortController = new AbortController();
+
+            // システムプロンプト作成
+            const chatPayload = [];
+            let currentSystemPrompt = chat.systemPrompt;
+            if (chat.promptSelect === 'custom') {
+                currentSystemPrompt = document.getElementById('custom-sys-prompt-input').value.trim() || '優秀なAIアシスタントです。';
+            }
+            
+            chatPayload.push({
+                role: 'system',
+                content: currentSystemPrompt
+            });
+
+            // 過去ログを構築してプッシュ
+            const history = chat.messages.slice(0, aiMsgIndex);
+            history.forEach(m => {
+                chatPayload.push({ role: m.role, content: m.content });
+            });
+
+            const chatMessagesContainer = document.getElementById('chat-messages');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        modelKey: chat.modelKey,
+                        messages: chatPayload,
+                        temperature: chat.temperature
+                    }),
+                    signal: abortController.signal
+                });
+
+                if (!response.ok) throw new Error('通信エラーが発生しました。');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let accumulatedText = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n\n');
+
+                    for (const line of lines) {
+                        const cleanedLine = line.trim();
+                        if (!cleanedLine) continue;
+
+                        if (cleanedLine === 'data: [DONE]') {
+                            break;
+                        }
+
+                        if (cleanedLine.startsWith('data: ')) {
+                            try {
+                                const parsed = JSON.parse(cleanedLine.slice(6));
+                                if (parsed.error) {
+                                    throw new Error(parsed.error);
+                                }
+                                if (parsed.text) {
+                                    accumulatedText += parsed.text;
+                                    chat.messages[aiMsgIndex].content = accumulatedText;
+                                    updateLastAIMessageUI(accumulatedText);
+                                    chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                                }
+                            } catch (e) {
+                                // 不完全なJSONはスキップ
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    showToast('生成を停止しました', 'info');
+                } else {
+                    console.error(error);
+                    chat.messages[aiMsgIndex].content = `⚠️ エラーが発生しました。時間を置いてやり直してください。\n\n詳細: ${error.message}`;
+                    updateLastAIMessageUI(chat.messages[aiMsgIndex].content);
+                    showToast('AIのレスポンス取得に失敗しました', 'error');
+                }
+            } finally {
+                isGenerating = false;
+                toggleButtonStates(false);
+                saveChatsToStorage();
+                renderMessages();
+            }
+        }
+
+        function updateLastAIMessageUI(text) {
+            const container = document.getElementById('chat-messages');
+            const lastMessageWrapper = container.lastElementChild;
+            if (!lastMessageWrapper) return;
+            const textEl = lastMessageWrapper.querySelector('.flex-1');
+            if (textEl) {
+                textEl.innerHTML = marked.parse(text);
+            }
+        }
+
+        function cancelGeneration() {
+            if (abortController) abortController.abort();
+        }
+
+        // ----------------------------------------------------
+        // ボタン状態制御
+        // ----------------------------------------------------
+        function toggleButtonStates(loading) {
+            const sendBtn = document.getElementById('send-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            if (loading) {
+                sendBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+            } else {
+                sendBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+            }
+        }
+
+        // ----------------------------------------------------
+        // 各設定変更イベント
+        // ----------------------------------------------------
+        function onModelChange() {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            const selectedModel = document.getElementById('model-select').value;
+            chat.modelKey = selectedModel;
+            updateModelLabel(selectedModel);
+            saveChatsToStorage();
+            showToast('モデルを切り替えました！', 'success');
+        }
+
+        function updateModelLabel(modelKey) {
+            const labelMap = {
+                'lemon-grandpro': '🍋 Lemon AI GrandPro (最高性能)',
+                'lemon-sp': '⚡ Lemon AI SP (高性能)',
+                'lemon-normal': '✨ Lemon AI (普通)',
+                'lemon-lite': '🚀 Lemon AI Lite (超爆速)'
+            };
+            document.getElementById('active-model-text').innerText = labelMap[modelKey] || 'Lemon AI';
+        }
+
+        function applyPromptTemplate() {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            const select = document.getElementById('sys-prompt-select').value;
+            const customPromptInput = document.getElementById('custom-prompt-container');
+            
+            chat.promptSelect = select;
+
+            const promptTemplates = {
+                'lemon': 'あなたは「Voton Lemon AI」という名前の爽やかで明るいAIアシスタントです。レモンにまつわる面白い例えや、甘酸っぱく爽やかな言葉遣いを時折交えながら、親切で元気に回答してください。',
+                'teacher': 'あなたは「優秀な学校の先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
+                'friend': 'あなたはフレンドリーな「友達」です。丁寧語は使わず、完全にフランクなタメ口で話し、共感を重視した絵文字を使いながら回答してください。',
+                'coder': 'あなたは世界トップクラスの「プログラマー」です。プログラムコードを出力する際はMarkdownのコードブロックを使用し、各コードにわかりやすい日本語のコメント・解説をつけて最高効率なコードのみを提示してください。',
+                'custom': ''
+            };
+
+            if (select === 'custom') {
+                customPromptInput.classList.remove('hidden');
+                // 前回のシステムプロンプトがある場合は入力欄に復元
+                if (chat.systemPrompt) {
+                    document.getElementById('custom-sys-prompt-input').value = chat.systemPrompt;
+                }
+            } else {
+                customPromptInput.classList.add('hidden');
+                chat.systemPrompt = promptTemplates[select];
+            }
+
+            saveChatsToStorage();
+        }
+
+        // カスタムプロンプト入力時の自動保存
+        document.getElementById('custom-sys-prompt-input').addEventListener('input', (e) => {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (chat) {
+                chat.systemPrompt = e.target.value.trim();
+                saveChatsToStorage();
+            }
+        });
+
+        function updateTempDisplay() {
+            const chat = chats.find(c => c.id === activeChatId);
+            const slider = document.getElementById('temp-slider');
+            const display = document.getElementById('temp-display-val');
+            
+            const val = parseFloat(slider.value);
+            
+            let label = "普通";
+            if (val <= 0.3) label = "論理的・正確";
+            else if (val >= 1.2) label = "とても独創的・ユーモラス";
+            else if (val >= 0.9) label = "独創的・クリエイティブ";
+
+            display.innerText = `${label} (${val})`;
+            
+            if (chat) {
+                chat.temperature = val;
+                saveChatsToStorage();
+            }
+        }
+
+        // ----------------------------------------------------
+        // チュートリアル（ウォークスルーガイド）
+        // ----------------------------------------------------
+        function startTutorial() {
+            tutorialStep = 0;
+            document.getElementById('tutorial-overlay').classList.remove('hidden');
+            showTutorialStep();
+        }
+
+        function showTutorialStep() {
+            const step = tutorialSteps[tutorialStep];
+            const element = document.getElementById(step.elementId);
+            const card = document.getElementById('tutorial-card');
+
+            // すべてのハイライトをリセット
+            document.querySelectorAll('.tutorial-highlight').forEach(el => {
+                el.classList.remove('tutorial-highlight');
+            });
+
+            if (element) {
+                // 対象要素にスポットライト（ハイライト）をあてる
+                element.classList.add('tutorial-highlight');
+                
+                // 要素の位置にチュートリアルカードを近づける計算
+                const rect = element.getBoundingClientRect();
+                const isMobile = window.innerWidth < 1024;
+
+                if (isMobile) {
+                    // モバイルの場合は画面下に固定
+                    card.style.left = '50%';
+                    card.style.top = '70%';
+                    card.style.transform = 'translate(-50%, -50%)';
+                } else {
+                    // PCの場合はハイライト要素の横（または近く）に綺麗に配置
+                    if (rect.right + 400 < window.innerWidth) {
+                        card.style.left = `${rect.right + 20}px`;
+                        card.style.top = `${rect.top}px`;
+                    } else {
+                        card.style.left = `${rect.left - 400}px`;
+                        card.style.top = `${rect.top}px`;
+                    }
+                    card.style.transform = 'none';
+                }
+            }
+
+            // カードテキスト更新
+            document.getElementById('tutorial-title').innerText = step.title;
+            document.getElementById('tutorial-body').innerText = step.body;
+            
+            const btnText = document.getElementById('tutorial-btn-text');
+            if (tutorialStep === tutorialSteps.length - 1) {
+                btnText.innerText = "ガイドを完了！";
+            } else {
+                btnText.innerText = "次へ";
+            }
+        }
+
+        function nextTutorialStep() {
+            tutorialStep++;
+            if (tutorialStep >= tutorialSteps.length) {
+                skipTutorial(); // 終了
+            } else {
+                showTutorialStep();
+            }
+        }
+
+        function skipTutorial() {
+            // スポットライト全解除
+            document.querySelectorAll('.tutorial-highlight').forEach(el => {
+                el.classList.remove('tutorial-highlight');
+            });
+            document.getElementById('tutorial-overlay').classList.add('hidden');
+            localStorage.setItem('voton_has_visited', 'true');
+            showToast('チュートリアルが完了しました！チャットへようこそ！', 'success');
+        }
+
+        // ----------------------------------------------------
+        // お役立ちヘルパー関数
+        // ----------------------------------------------------
+        function handleTextareaKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                document.getElementById('chat-form').requestSubmit();
+            }
+        }
+
+        const textarea = document.getElementById('user-input');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        function copyToClipboard(button, text) {
+            const temp = document.createElement('textarea');
+            temp.value = text;
+            document.body.appendChild(temp);
+            temp.select();
+            try {
+                document.execCommand('copy');
+                button.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-500"></i> コピー完了`;
+                lucide.createIcons();
+                setTimeout(() => {
+                    button.innerHTML = `<i data-lucide="copy" class="w-3 h-3"></i> コピー`;
+                    lucide.createIcons();
+                }, 2000);
+            } catch (err) {
+                showToast("コピーに失敗しました", "error");
+            }
+            document.body.removeChild(temp);
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const text = document.getElementById('toast-text');
+            const icon = document.getElementById('toast-icon');
+
+            text.innerText = message;
+            
+            let name = 'info';
+            let color = 'text-yellow-400';
+            if (type === 'success') { name = 'check-circle'; color = 'text-emerald-400'; }
+            if (type === 'error') { name = 'alert-triangle'; color = 'text-rose-400'; }
+
+            icon.setAttribute('data-lucide', name);
+            icon.className = `w-4 h-4 ${color}`;
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-[-100px]', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-100px]', 'opacity-0');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 3000);
+        }
+
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' }[m]));
+        }
+    </script>
+</body>
+</html>
