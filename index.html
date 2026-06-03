@@ -193,8 +193,8 @@
 
                 <!-- 各種ヘッダー操作ボタン -->
                 <div class="flex items-center gap-2">
-                    <!-- モデルセレクター -->
-                    <select id="model-select" onchange="onModelChange()" class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none cursor-pointer" id="guide-model">
+                    <!-- モデルセレクター (ガイド特定用の重複IDを解決) -->
+                    <select id="model-select" onchange="onModelChange()" class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none cursor-pointer">
                         <option value="lemon-grandpro">🍋 Lemon AI GrandPro (最高性能)</option>
                         <option value="lemon-sp">⚡ Lemon AI SP (高性能)</option>
                         <option value="lemon-normal" selected>✨ Lemon AI (普通)</option>
@@ -213,7 +213,7 @@
                 </div>
             </header>
 
-            <!-- プライベートモード警告表示（プライベートモードONのときだけ表示） -->
+            <!-- プライベートモード警告表示 -->
             <div id="private-alert-bar" class="hidden bg-purple-600 text-white text-center py-1.5 px-4 text-xs font-bold shadow-inner flex items-center justify-center gap-1.5 z-20">
                 <i data-lucide="shield-alert" class="w-4 h-4"></i>
                 プライベートモード作動中 - 履歴や設定はこのセッション限りで自動消去されます
@@ -473,13 +473,25 @@
         }
 
         function selectChat(chatId) {
+            let chat = chats.find(c => c.id === chatId);
+            
+            // 安全なフォールバック設計：
+            // activeChatIdが破損していたり、古い無効なIDだった場合は、
+            // 履歴の最初の会話、または新規作成して強制リカバリーします（サイレント死防止）
+            if (!chat) {
+                if (chats.length > 0) {
+                    chatId = chats[0].id;
+                    chat = chats[0];
+                } else {
+                    createNewChat();
+                    return;
+                }
+            }
+
             activeChatId = chatId;
             if (!isPrivateMode) {
                 localStorage.setItem('voton_active_chat_id', chatId);
             }
-            
-            const chat = chats.find(c => c.id === chatId);
-            if (!chat) return;
 
             document.getElementById('current-chat-title').innerText = chat.title;
             document.getElementById('model-select').value = chat.modelKey || 'lemon-normal';
@@ -487,7 +499,7 @@
             document.getElementById('temp-slider').value = chat.temperature !== undefined ? chat.temperature : 0.7;
             
             // 画面モデル表示と温度の更新
-            updateModelLabel(chat.modelKey);
+            updateModelLabel(chat.modelKey || 'lemon-normal');
             updateTempDisplay();
             applyPromptTemplate();
 
@@ -621,13 +633,13 @@
 
                 contentColumn.appendChild(textContainer);
 
-                // メタ情報 (コピーなど)
+                // メタ情報 (コピーボタンは、エラーを完全に防ぐためにインデックスによる取得方式に刷新)
                 if (!isUser) {
                     const meta = document.createElement('div');
                     meta.className = "flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 dark:text-slate-500";
                     meta.innerHTML = `
                         <span>${msg.time ? new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
-                        <button onclick="copyToClipboard(this, \`${msg.content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" class="hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition-colors">
+                        <button onclick="copyMessageByIndex(${idx}, this)" class="hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition-colors">
                             <i data-lucide="copy" class="w-3 h-3"></i> コピー
                         </button>
                     `;
@@ -661,8 +673,22 @@
             const messageText = inputEl.value.trim();
             if (!messageText) return;
 
-            const chat = chats.find(c => c.id === activeChatId);
-            if (!chat) return;
+            // 送信時のスレッド自動復旧＆再取得（サイレントクラッシュの完全防止）
+            let chat = chats.find(c => c.id === activeChatId);
+            if (!chat) {
+                if (chats.length > 0) {
+                    activeChatId = chats[0].id;
+                    chat = chats[0];
+                } else {
+                    createNewChat();
+                    chat = chats[0];
+                }
+            }
+
+            if (!chat) {
+                showToast("有効なチャットが見つかりませんでした。再度お試しください。", "error");
+                return;
+            }
 
             // ユーザーメッセージを追加
             chat.messages.push({
@@ -701,7 +727,7 @@
 
             // システムプロンプト作成
             const chatPayload = [];
-            let currentSystemPrompt = chat.systemPrompt;
+            let currentSystemPrompt = chat.systemPrompt || '';
             if (chat.promptSelect === 'custom') {
                 currentSystemPrompt = document.getElementById('custom-sys-prompt-input').value.trim() || '優秀なAIアシスタントです。';
             }
@@ -724,9 +750,9 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        modelKey: chat.modelKey,
+                        modelKey: chat.modelKey || 'lemon-normal',
                         messages: chatPayload,
-                        temperature: chat.temperature
+                        temperature: chat.temperature !== undefined ? chat.temperature : 0.7
                     }),
                     signal: abortController.signal
                 });
@@ -803,6 +829,34 @@
             if (abortController) abortController.abort();
         }
 
+        // 安全なインデックス指定型コピー機能（パースエラーを100%防止）
+        function copyMessageByIndex(index, button) {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat || !chat.messages[index]) {
+                showToast("コピー対象のデータが見つかりませんでした", "error");
+                return;
+            }
+            
+            const rawText = chat.messages[index].content;
+            const temp = document.createElement('textarea');
+            temp.value = rawText;
+            document.body.appendChild(temp);
+            temp.select();
+            
+            try {
+                document.execCommand('copy');
+                button.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-500 animate-pulse"></i> コピー完了`;
+                lucide.createIcons();
+                setTimeout(() => {
+                    button.innerHTML = `<i data-lucide="copy" class="w-3 h-3"></i> コピー`;
+                    lucide.createIcons();
+                }, 2000);
+            } catch (err) {
+                showToast("コピーに失敗しました", "error");
+            }
+            document.body.removeChild(temp);
+        }
+
         // ----------------------------------------------------
         // ボタン状態制御
         // ----------------------------------------------------
@@ -853,7 +907,7 @@
 
             const promptTemplates = {
                 'lemon': 'あなたは「Voton Lemon AI」という名前の爽やかで明るいAIアシスタントです。レモンにまつわる面白い例えや、甘酸っぱく爽やかな言葉遣いを時折交えながら、親切で元気に回答してください。',
-                'teacher': 'あなたは「優秀な学校の先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
+                'teacher': 'あなたは「優秀な学校 of 先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
                 'friend': 'あなたはフレンドリーな「友達」です。丁寧語は使わず、完全にフランクなタメ口で話し、共感を重視した絵文字を使いながら回答してください。',
                 'coder': 'あなたは世界トップクラスの「プログラマー」です。プログラムコードを出力する際はMarkdownのコードブロックを使用し、各コードにわかりやすい日本語のコメント・解説をつけて最高効率なコードのみを提示してください。',
                 'custom': ''
@@ -861,7 +915,6 @@
 
             if (select === 'custom') {
                 customPromptInput.classList.remove('hidden');
-                // 前回のシステムプロンプトがある場合は入力欄に復元
                 if (chat.systemPrompt) {
                     document.getElementById('custom-sys-prompt-input').value = chat.systemPrompt;
                 }
@@ -1017,25 +1070,6 @@
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
-
-        function copyToClipboard(button, text) {
-            const temp = document.createElement('textarea');
-            temp.value = text;
-            document.body.appendChild(temp);
-            temp.select();
-            try {
-                document.execCommand('copy');
-                button.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-500"></i> コピー完了`;
-                lucide.createIcons();
-                setTimeout(() => {
-                    button.innerHTML = `<i data-lucide="copy" class="w-3 h-3"></i> コピー`;
-                    lucide.createIcons();
-                }, 2000);
-            } catch (err) {
-                showToast("コピーに失敗しました", "error");
-            }
-            document.body.removeChild(temp);
-        }
 
         function showToast(message, type = 'info') {
             const toast = document.getElementById('toast');
