@@ -609,9 +609,9 @@
                 const contentColumn = document.createElement('div');
                 contentColumn.className = "flex-grow flex flex-col overflow-x-auto";
 
-                // 本文テキスト
+                // 本文テキスト (ストリーミング描画を確実にするため専用識別クラス「response-text-content」を付与)
                 const textContainer = document.createElement('div');
-                textContainer.className = "text-xs md:text-sm leading-relaxed space-y-2";
+                textContainer.className = "text-xs md:text-sm leading-relaxed space-y-2 response-text-content";
                 
                 if (isUser) {
                     textContainer.innerText = msg.content;
@@ -788,11 +788,12 @@
             }
         }
 
+        // リアルタイムに文字を描画するためのDOM書き換えヘルパー
         function updateLastAIMessageUI(text) {
             const container = document.getElementById('chat-messages');
             const lastMessageWrapper = container.lastElementChild;
             if (!lastMessageWrapper) return;
-            const textEl = lastMessageWrapper.querySelector('.flex-1');
+            const textEl = lastMessageWrapper.querySelector('.response-text-content');
             if (textEl) {
                 textEl.innerHTML = marked.parse(text);
             }
