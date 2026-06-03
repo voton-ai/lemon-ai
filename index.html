@@ -35,11 +35,11 @@
     <!-- Markdown Parser (Marked) -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        /* テーマごとのトランジション */
+        /* テーマごとの基本色トランジション */
         body {
             transition: background-color 0.3s, color 0.3s;
         }
-        /* スクロールバーのカスタマイズ */
+        /* スクロールバー装飾 */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -54,12 +54,20 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(156, 163, 175, 0.5);
         }
-        /* チュートリアル用のスポットライト効果 */
+        /* チュートリアル用のスポットライトアニメーション */
         .tutorial-highlight {
             position: relative;
             z-index: 100 !important;
-            box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.8) !important;
+            outline: 4px solid #facc15 !important;
+            outline-offset: 2px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.85) !important;
+            background-color: #ffffff !important;
             pointer-events: none;
+        }
+        /* ダークモード時のハイライト要素の背景色を強制補正 */
+        .dark .tutorial-highlight {
+            background-color: #0f172a !important; /* slate-900 */
         }
     </style>
 </head>
@@ -916,26 +924,50 @@
                 // 対象要素にスポットライト（ハイライト）をあてる
                 element.classList.add('tutorial-highlight');
                 
-                // 要素の位置にチュートリアルカードを近づける計算
                 const rect = element.getBoundingClientRect();
-                const isMobile = window.innerWidth < 1024;
+                const cardWidth = 350; // ガイドカードの推定幅
+                const cardHeight = 220; // ガイドカードの推定高さ
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
 
-                if (isMobile) {
-                    // モバイルの場合は画面下に固定
-                    card.style.left = '50%';
-                    card.style.top = '70%';
-                    card.style.transform = 'translate(-50%, -50%)';
-                } else {
-                    // PCの場合はハイライト要素の横（または近く）に綺麗に配置
-                    if (rect.right + 400 < window.innerWidth) {
-                        card.style.left = `${rect.right + 20}px`;
-                        card.style.top = `${rect.top}px`;
+                let targetLeft = 0;
+                let targetTop = 0;
+
+                if (viewportWidth < 1024) {
+                    // モバイル・タブレット：画面中央付近で要素と被りにくい位置へ配置
+                    targetLeft = (viewportWidth - Math.min(viewportWidth - 32, cardWidth)) / 2;
+                    
+                    if (rect.top > viewportHeight / 2) {
+                        // ターゲットが画面の下半分（入力欄など）➔ カードを画面上部に置く
+                        targetTop = 40; 
                     } else {
-                        card.style.left = `${rect.left - 400}px`;
-                        card.style.top = `${rect.top}px`;
+                        // ターゲットが画面の上半分 ➔ カードを画面下部に置く
+                        targetTop = viewportHeight - cardHeight - 60;
                     }
-                    card.style.transform = 'none';
+                } else {
+                    // PC：ターゲット要素の横または上に綺麗に配置
+                    targetLeft = rect.right + 20;
+                    targetTop = rect.top;
+
+                    // 右側にはみ出る場合は、左側に配置
+                    if (targetLeft + cardWidth > viewportWidth) {
+                        targetLeft = rect.left - cardWidth - 20;
+                    }
+
+                    // ターゲットが画面の最下部（入力欄など）にある場合、要素の上に配置
+                    if (rect.top > viewportHeight - 250) {
+                        targetTop = rect.top - cardHeight - 25;
+                        targetLeft = rect.left + (rect.width - cardWidth) / 2;
+                    }
+
+                    // 画面の上下左右の境界線からはみ出ないように最終ガード
+                    targetLeft = Math.max(20, Math.min(targetLeft, viewportWidth - cardWidth - 20));
+                    targetTop = Math.max(20, Math.min(targetTop, viewportHeight - cardHeight - 40));
                 }
+
+                card.style.left = `${targetLeft}px`;
+                card.style.top = `${targetTop}px`;
+                card.style.transform = 'none'; // transformによるズレを防止
             }
 
             // カードテキスト更新
