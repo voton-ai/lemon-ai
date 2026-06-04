@@ -2,10 +2,10 @@
  * Voton Lemon AI - サーバー用起動プログラム (server.js)
  * * [特徴]
  * - フロントエンドの「index.html」を安全に配信します。
- * - バックエンドとして、Groq APIとの通信を安全に中継(Proxy)し、APIキーを完全に隠蔽します。
- * - クライアント側へイベントストリーム(SSE)で回答をリアルタイム返却します。
- * - 随所に詳細なデバッグ用 console.log を仕込み、Renderのログ画面から一目で処理状況が追えるようにしました。
- * - readlineモジュールを使用し、あらゆるNode.js環境で100%クラッシュしない超堅牢なストリーム解析を実装。
+ * - バックエンドとして、Google Gemini API との通信を安全に中継(Proxy)します。
+ * - 規約違反でBANされたGroqの代わりに、完全無料のGemini APIにシステムを移行。
+ * - 随所に詳細なデバッグ用 console.log を仕込み、進捗がコンソールにリアルタイム表示されます。
+ * - GROQ_API_KEY という名前のままGeminiのキーを貼り付けても自動認識する、超親切なハイブリッド設計。
  */
 
 const express = require('express');
@@ -16,94 +16,108 @@ const readline = require('readline');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Groq API の設定 (環境変数から取得)
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+// Gemini APIのキー（環境変数 GEMINI_API_KEY または既存の GROQ_API_KEY からハイブリッドで自動取得）
+const API_KEY = process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY;
 
 app.use(express.json());
 
 // 静的ファイル（HTML, CSS, JSなど）を配信する設定
 app.use(express.static(__dirname));
 
-// --- APIエンドポイント: モデルマッピング ---
+// 2026年最新・超高性能の「Gemini 2.5 シリーズ」をマッピングします
 const MODEL_MAPPING = {
-    'lemon-grandpro': 'llama-3.3-70b-versatile', // 最高性能 (Llama 3.3 70B)
-    'lemon-sp': 'llama-3.1-8b-instant',          // 高性能・高バランス (Llama 3.1 8B)
-    'lemon-normal': 'llama-3.1-8b-instant',      // 普通 (Llama 3.1 8B)
-    'lemon-lite': 'llama-3.1-8b-instant'         // 爆速 (Llama 3.1 8B)
+    'lemon-grandpro': 'gemini-2.5-pro',   // 最高性能 (Gemini 2.5 Pro)
+    'lemon-sp': 'gemini-2.5-flash',       // 高性能・高バランス (Gemini 2.5 Flash)
+    'lemon-normal': 'gemini-2.5-flash',   // 普通 (Gemini 2.5 Flash) - 非常に滑らかで爆速
+    'lemon-lite': 'gemini-2.5-flash'      // 爆速 (Gemini 2.5 Flash)
 };
 
-// --- APIエンドポイント: チャットストリーミング中継プロキシ ---
 app.post('/api/chat', async (req, res) => {
-    console.log('\n--- [📥 新規チャットリクエスト受信] ---');
+    console.log('\n===================================================');
+    console.log('--- [📥 新規チャットリクエスト受信（Geminiエンジン起動）] ---');
+    console.log('===================================================');
+    
     const { modelKey, messages, temperature } = req.body;
 
-    console.log(`[設定データ] 受信モデルキー: "${modelKey}"`);
-    console.log(`[設定データ] 設定温度 (Temperature): ${temperature}`);
-    if (messages && Array.isArray(messages)) {
-        console.log(`[設定データ] 会話履歴のメッセージ数: ${messages.length} 件`);
-        console.log(`[設定データ] 最新のユーザー入力内容: "${messages[messages.length - 1]?.content}"`);
-    } else {
-        console.log(`[⚠️ 警告] メッセージ履歴が正しく送られていません。`);
-    }
+    console.log(`[🔍 1. 受信確認] モデルキー: "${modelKey}" | 設定温度 (Temp): ${temperature}`);
 
-    // APIキーの存在チェック
-    if (!GROQ_API_KEY) {
-        console.error('[❌ エラー] サーバー側に GROQ_API_KEY 環境変数が設定されていません！');
-        return res.status(500).json({ error: 'サーバー側に GROQ_API_KEY が設定されていません。Renderの設定を確認してください。' });
+    // APIキーの読み込み確認
+    if (!API_KEY) {
+        console.error('[❌ エラー] APIキーが未設定です。Renderの設定画面で環境変数(GROQ_API_KEY または GEMINI_API_KEY)を登録してください。');
+        return res.status(500).json({ error: 'サーバー側にAPIキーが設定されていません。Renderの設定を確認してください。' });
     } else {
-        console.log(`[認証確認] APIキーは正常にロードされています。(接頭辞: ${GROQ_API_KEY.substring(0, 8)}...)`);
+        console.log(`[🔑 2. キー確認] APIキーを正常検出。 (接頭辞: ${API_KEY.substring(0, 10)}...)`);
     }
 
     if (!messages || !Array.isArray(messages)) {
-        console.error('[❌ エラー] リクエストの messages 形式が不正です。');
-        return res.status(400).json({ error: 'メッセージデータが不正です。' });
+        console.error('[❌ エラー] messages の配列フォーマットが不正です。');
+        return res.status(400).json({ error: 'メッセージデータが空、または不正です。' });
     }
 
-    // クライアント指定のキーからGroqの実際のモデル名を取得
-    const targetModel = MODEL_MAPPING[modelKey] || MODEL_MAPPING['lemon-normal'];
-    console.log(`[モデル選定] キー "${modelKey}" を実際のGroqモデル "${targetModel}" にマッピングしました。`);
+    console.log(`[📁 3. 履歴解析] メッセージ総数: ${messages.length} 件`);
     
-    // 設定された柔軟性 (Temperature)
-    const tempValue = parseFloat(temperature) !== undefined ? parseFloat(temperature) : 0.7;
+    // クライアント指定のキーからGeminiの実際のモデル名を取得
+    const targetModel = MODEL_MAPPING[modelKey] || MODEL_MAPPING['lemon-normal'];
+    console.log(`[🤖 4. モデル選定] 使用するGeminiモデル: "${targetModel}"`);
 
-    // レスポンスヘッダーの設定 (ストリーミング中継の宣言)
-    console.log('[中継設定] ブラウザ向けのイベントストリーム(SSE)ヘッダーを出力します...');
+    // チャットメッセージを Google Gemini API (contents) の規格形式に変換する
+    const contents = [];
+    let systemInstructionText = "あなたは優秀なAIアシスタントです。";
+
+    messages.forEach((msg, idx) => {
+        if (msg.role === 'system') {
+            systemInstructionText = msg.content;
+        } else {
+            contents.push({
+                role: msg.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+            });
+        }
+    });
+
+    console.log(`[📝 5. 変換完了] 変換後のメッセージ件数: ${contents.length} 件 | システムプロンプト文字数: ${systemInstructionText.length}文字`);
+
+    // レスポンスヘッダーの設定 (ブラウザに逐次出力するSSE規格を宣言)
+    console.log('[🌐 6. 通信準備] SSE（イベントストリーム）用ヘッダーをレスポンスに書き込みます...');
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // CORS安全対策
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Gemini API 接続用URL (Beta APIのstreamGenerateContentを使用)
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${API_KEY}`;
+    
+    console.log(`[🚀 7. Gemini接続開始] エンドポイントに接続します...`);
 
     try {
-        console.log('[🚀 Groq通信] Groq APIに接続を試みます...');
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const response = await fetch(geminiUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: targetModel,
-                messages: messages,
-                temperature: tempValue,
-                stream: true
+                contents: contents,
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
+                },
+                generationConfig: {
+                    temperature: parseFloat(temperature) || 0.7
+                }
             })
         });
 
-        console.log(`[Groq通信] レスポンスを受信。ステータスコード: ${response.status} (${response.statusText})`);
+        console.log(`[📡 8. Gemini応答受信] レスポンス ステータスコード: ${response.status} (${response.statusText})`);
 
         if (!response.ok) {
             const errorDetails = await response.text();
-            console.error(`[❌ Groqエラー] Groq API側がエラーを返しました:\n${errorDetails}`);
-            res.write(`data: ${JSON.stringify({ error: `Groqエラー: ${errorDetails}` })}\n\n`);
+            console.error(`[❌ APIエラー] Gemini側からエラーメッセージが返却されました:\n${errorDetails}`);
+            res.write(`data: ${JSON.stringify({ error: `Gemini APIエラー: ${errorDetails}` })}\n\n`);
             return res.end();
         }
 
-        console.log('[🔓 ストリーム解析] 超安全な readline ストリーム解析を開始します...');
+        console.log('[🔓 9. ストリーム解析] readline モジュールによる安全な1行処理を開始します...');
 
-        // Node.js内蔵のWeb StreamをNode.js標準のReadableストリームに変換
         const nodeStream = Readable.from(response.body);
-        
-        // 改行コード(\n)を検知して1行ずつ完璧に切り出してくれるインターフェースを作成
         const rl = readline.createInterface({
             input: nodeStream,
             terminal: false
@@ -112,57 +126,54 @@ app.post('/api/chat', async (req, res) => {
         let chunkCount = 0;
         let charCount = 0;
 
-        // 1行データが届くたびに動くループ処理
+        // Geminiのストリーミングは JSON 配列が少しずつ崩れて送られてくるため、カンマやブラケットを除去して綺麗にパースします
         for await (const line of rl) {
-            const cleanedLine = line.trim();
+            let cleanedLine = line.trim();
             if (!cleanedLine) continue;
 
-            // 終了信号をキャッチした場合
-            if (cleanedLine === 'data: [DONE]') {
-                console.log(`[ストリーム完了] Groqから [DONE] 信号を受信しました。中継を終了します。`);
-                res.write('data: [DONE]\n\n');
-                continue;
-            }
+            // 配列の始まり、終わり、または要素の区切りカンマを除去
+            if (cleanedLine.startsWith('[')) cleanedLine = cleanedLine.slice(1);
+            if (cleanedLine.endsWith(']')) cleanedLine = cleanedLine.slice(0, -1);
+            if (cleanedLine.startsWith(',')) cleanedLine = cleanedLine.slice(1);
+            cleanedLine = cleanedLine.trim();
 
-            // data: から始まる有効なストリーム行のみパース
-            if (cleanedLine.startsWith('data: ')) {
-                try {
-                    const parsed = JSON.parse(cleanedLine.slice(6));
-                    const textChunk = parsed.choices?.[0]?.delta?.content;
-                    if (textChunk) {
-                        chunkCount++;
-                        charCount += textChunk.length;
-                        
-                        // クライアント(ブラウザ)へそのまま中継送信
-                        res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
-                    }
-                } catch (e) {
-                    // JSONが途中で切れていた場合などのパース失敗は安全にスルー
-                    console.log(`[⚠️ デバッグ] 半端なJSON行をスキップしました: "${cleanedLine}"`);
+            if (!cleanedLine) continue;
+
+            try {
+                const parsed = JSON.parse(cleanedLine);
+                const textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (textChunk) {
+                    chunkCount++;
+                    charCount += textChunk.length;
+
+                    // クライアント（index.html）が求めている「data: {"text": "..."}\n\n」の規格に完全に揃えて中継送信
+                    res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
                 }
+            } catch (e) {
+                // 不完全なJSONの行（読み込み途中など）は安全にスキップ
             }
         }
 
-        console.log(`[🎉 中継完了] ブラウザへの送信が成功しました。(受信チャンク数: ${chunkCount}回, 総出力文字数: ${charCount}文字)`);
+        console.log(`[🎉 10. 中継完了] クライアントへの送信に成功しました！(チャンク回数: ${chunkCount}回, 総送信文字数: ${charCount}文字)`);
+        res.write('data: [DONE]\n\n');
         res.end();
 
     } catch (error) {
-        console.error('[❌ 致命的エラー] チャット通信処理中に例外が発生しました:', error);
-        res.write(`data: ${JSON.stringify({ error: 'AIサーバーへの接続でエラーが発生しました。インターネット接続やAPIキーの設定を確認してください。' })}\n\n`);
+        console.error('[❌ 致命的エラー] チャット処理中に予期せぬ例外が発生しました:', error);
+        res.write(`data: ${JSON.stringify({ error: 'AIサーバーまたはGoogle Cloudへの接続でエラーが発生しました。インターネット接続やAPIキーの設定を確認してください。' })}\n\n`);
         res.end();
     }
 });
 
-// メインページの配信
 app.get('/', (req, res) => {
-    console.log('[📄 ページ配信] クライアントがトップページにアクセスしました。index.htmlを配信します。');
+    console.log('[📄 ページ配信] クライアントがアクセスしました。トップページをロードします。');
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// サーバーをポート3000で起動
 app.listen(PORT, () => {
     console.log(`===================================================`);
-    console.log(` Voton Lemon AI サーバーがポート ${PORT} で正常起動しました。`);
-    console.log(` URL: http://localhost:${PORT}`);
+    console.log(` Voton Lemon AI (Geminiエンジン) が起動しました。`);
+    console.log(` 稼働中URL: http://localhost:${PORT}`);
     console.log(`===================================================`);
 });
