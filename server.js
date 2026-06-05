@@ -1,10 +1,10 @@
 /**
- * Voton Lemon AI - 画像読み込み(マルチモーダル)＆AI画像生成(Imagen4/SDXL)対応サーバー (server.js)
- * * [主な追加機能]
- * - 画像アップロード（Base64）を受け取り、GeminiやOpenAIのマルチモーダルAPIへ安全に転送。
- * - ユーザーの「画像を作って」「〇〇を描いて」という指示（インテント）を自動判別し、AI画像生成を実施。
- * - Googleの最強画像生成「Imagen 4 (imagen-4.0-generate-001)」および完全無料の「Stable Diffusion XL (Hugging Face)」を統合。
- * - 生成された画像はBase64データとしてマークダウン形式でチャット上に直接表示されます。
+ * Voton Lemon AI - 画像読み込み(マルチモーダル)＆AI画像生成(Imagen4/SDXL/FLUX)対応サーバー (server.js)
+ * * [主な改善機能]
+ * - ユーザーの「画像を作って」「〇〇を描いて」という指示を自動判別し、極めて親切で暖かみのある言葉遣いで返答。
+ * - 万が一、Google/HuggingFace/OpenAIのAPIキーが無い・エラーになった場合でも、
+ *   世界最高クラスの完全無料・キー不要の画像生成エンジン「Pollinations AI (FLUX.1ベース)」を稼働。
+ *   これにより、いつでも・誰でも・キーなしで最高に美しい画像がその場で確実に生成されます！
  */
 
 const express = require('express');
@@ -166,12 +166,12 @@ async function performWebSearch(query) {
 }
 
 /**
- * AI画像生成エンジン (Google Imagen 4 または Hugging Face SDXL)
+ * AI画像生成エンジン (Google Imagen 4 / Hugging Face SDXL / Pollinations AI 超高度なフェイルオーバー)
  */
 async function generateAIImage(prompt) {
     console.log(`[🎨 AI画像生成開始] プロンプト: "${prompt}"`);
     
-    // 1. Google Gemini (Imagen 4) が設定されていれば最優先で呼び出し
+    // 1. Google Gemini (Imagen 4)
     if (KEYS.gemini) {
         console.log(`[🎨 Imagen 4] Google Cloud Image Generation APIを呼び出します...`);
         try {
@@ -204,7 +204,7 @@ async function generateAIImage(prompt) {
         }
     }
 
-    // 2. Hugging Face (Stable Diffusion XL) をバックアップとして使用 (完全無料・キー必須)
+    // 2. Hugging Face (Stable Diffusion XL)
     if (KEYS.huggingface) {
         console.log(`[🎨 SDXL] Hugging Face Inference APIを呼び出します...`);
         try {
@@ -231,7 +231,7 @@ async function generateAIImage(prompt) {
         }
     }
 
-    // 3. OpenAI DALL-E-3 バックアップ
+    // 3. OpenAI DALL-E-3
     if (KEYS.openai) {
         console.log(`[🎨 DALL-E-3] OpenAI Image Generation APIを呼び出します...`);
         try {
@@ -263,17 +263,17 @@ async function generateAIImage(prompt) {
         }
     }
 
-    // どのキーも無い、またはエラーの場合のプレースホルダー
-    return `https://placehold.co/512x512/fef08a/0f172a?text=Image+Generation+Key+Required`;
+    // 4. 【最強の不死身フェイルオーバー】完全無料・キーレス・高画質な Pollinations AI (FLUX.1)
+    console.log(`[🎨 Pollinations AI] 完全無料で最高画質なキーレスエンジン(FLUX)を呼び出します...`);
+    const uniqueSeed = Math.floor(Math.random() * 1000000);
+    return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&enhance=true&seed=${uniqueSeed}`;
 }
 
 /**
- * ユーザーのメッセージを解析し、最適なAPIへディスパッチ（振り分け）します
+ * ユーザーのメッセージを解析し、最適なAPIへディスパッチ（状況データ合体）
  */
 async function processSearchGrounding(messages) {
     const userMessage = messages[messages.length - 1]?.content || "";
-    
-    // 現在時刻の取得
     const now = new Date();
     const jstTime = new Intl.DateTimeFormat('ja-JP', {
         timeZone: 'Asia/Tokyo',
@@ -351,7 +351,7 @@ ${JSON.stringify(heartRailsResult.station || heartRailsResult, null, 2)}
         }
     }
 
-    // 3. 電車の遅延・運行状況インテントの解析
+    // 3. 電車の遅延・運行状況インテント
     if (userMessage.includes("遅延") || userMessage.includes("運行情報") || userMessage.includes("遅れてる") || userMessage.includes("見合わせ") || userMessage.includes("電車")) {
         console.log("[💡 電車運行情報インテントを検出]");
         const delaySearch = await performWebSearch(userMessage + " 運行情報 遅延 運転見合わせ Yahoo路線情報");
@@ -363,7 +363,7 @@ ${delaySearch}
 `;
     }
 
-    // 4. 地図インテントの解析
+    // 4. 地図インテント
     if (userMessage.includes("地図") || userMessage.includes("マップ") || userMessage.includes("場所") || userMessage.includes("どこ")) {
         console.log("[💡 地図インテントを検出]");
         const placeMatch = userMessage.replace(/(の地図|のマップ|を見せて|はどこ|地図|マップ)/g, "").trim();
@@ -448,13 +448,12 @@ ${generalSearch}
     return groundedMessages;
 }
 
-// --- チャットストリーミング中継（フェイルオーバーコア） ---
+// --- チャットストリーミング中継 ---
 app.post('/api/chat', async (req, res) => {
     console.log('\n===================================================');
-    console.log('--- [📥 新規マルチAPIチャットリクエスト受信] ---');
+    console.log('--- [📥 新規チャットリクエスト受信] ---');
     console.log('===================================================');
     
-    // 画像データ（Base64）とテキストメッセージの抽出
     const { modelKey, messages, temperature, image } = req.body;
 
     let tempValue = parseFloat(temperature);
@@ -472,12 +471,18 @@ app.post('/api/chat', async (req, res) => {
     if (isImageGenerationIntent) {
         console.log("[💡 画像生成インテントを検知しました]");
         try {
-            // プロンプトの抽出（「画像を生成して」などの末尾トリガーを削除）
+            // プロンプトの抽出（末尾トリガーを削除）
             const cleanedPrompt = userMessage.replace(/(の画像を生成して|の画像を作って|の絵を描いて|のイラストを作って|画像を生成して|画像を作って|絵を描いて|イラストを描いて)/g, "").trim();
-            const imageUrl = await generateAIImage(cleanedPrompt || "A beautiful cybernetic lemon assistant mascot sitting on a desk, high quality 3d render");
+            const imageUrl = await generateAIImage(cleanedPrompt || "A cute red panda in a forest, high quality");
             
-            // マークダウンとして画像を直接インラインでクライアントへ一撃送信
-            const textResponse = `✨ ご指定のプロンプトに基づいて画像を生成しました！\n\n**プロンプト**: "${cleanedPrompt || "A beautiful cybernetic lemon assistant"}"\n\n![Generated Image](${imageUrl})`;
+            // ユーザーに寄り添った、あたたかみのある親切なメッセージを動的に作成
+            const chatReplies = [
+                `🎨 リクエストいただいた「${cleanedPrompt || "レッサーパンダ"}」のイメージを描いてみました！いかがでしょうか？ふんわりと愛らしく仕上げました。お気に召すと嬉しいです！✨\n\n![Generated Image](${imageUrl})`,
+                `🍀 お待たせしました！「${cleanedPrompt || "レッサーパンダ"}」の素敵なイラストが完成しました。細部まで丁寧に仕上げています。どうぞお楽しみくださいね！🖌️\n\n![Generated Image](${imageUrl})`,
+                `✨ ご要望の「${cleanedPrompt || "レッサーパンダ"}」を表現したアートです！あなたの頭の中のイメージ通りに描けていますでしょうか？ぜひ可愛がってあげてください！🎀\n\n![Generated Image](${imageUrl})`
+            ];
+            const textResponse = chatReplies[Math.floor(Math.random() * chatReplies.length)];
+
             res.write(`data: ${JSON.stringify({ text: textResponse })}\n\n`);
             res.write('data: [DONE]\n\n');
             return res.end();
@@ -510,13 +515,10 @@ app.post('/api/chat', async (req, res) => {
         const targetModel = PROVIDER_MODELS[prov.type]?.[modelKey] || PROVIDER_MODELS[prov.type]?.['lemon-normal'] || 'gpt-4o-mini';
 
         console.log(`\n--- [🔄 試行 ${i + 1}/${activeProviders.length}] プロバイダー: ${prov.name} ---`);
-        console.log(`[中継詳細] 送信先モデル名: "${targetModel}"`);
-
         try {
             let response;
 
             if (prov.type === 'openai') {
-                // OpenAI (ChatGPT) マルチモーダル＆画像読み込み対応
                 let requestMessages = groundedMessages.map(m => {
                     if (m.role === 'user' && image && m.content === userMessage) {
                         return {
@@ -545,7 +547,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'gemini') {
-                // Gemini マルチモーダル＆画像読み込み対応
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
                 const systemMsg = groundedMessages.find(m => m.role === 'system');
                 
@@ -553,7 +554,6 @@ app.post('/api/chat', async (req, res) => {
                     const role = msg.role === 'assistant' ? 'model' : 'user';
                     const parts = [{ text: msg.content }];
                     
-                    // 最後のユーザーメッセージにアップロード画像があればGeminiペイロードにマージ
                     if (msg.role === 'user' && image && msg.content === userMessage) {
                         parts.push({
                             inlineData: {
@@ -582,7 +582,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else {
-                // 他の互換プロバイダー中継
                 let baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
                 if (prov.type === 'together') baseUrl = 'https://api.together.xyz/v1/chat/completions';
                 if (prov.type === 'huggingface') baseUrl = 'https://api-inference.huggingface.co/v1/chat/completions';
@@ -603,16 +602,12 @@ app.post('/api/chat', async (req, res) => {
             }
 
             if (!response.ok) {
-                const errText = await response.text();
-                console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。代替プロバイダーへ切り替えます。詳細:\n${errText}`);
+                console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。次のプロバイダーに移行します。`);
                 continue; 
             }
 
-            console.log(`[🎉 成功] ${prov.name} からの応答ストリーミングを中継します。`);
             const nodeStream = Readable.from(response.body);
             const rl = readline.createInterface({ input: nodeStream, terminal: false });
-
-            let charCount = 0;
 
             for await (const line of rl) {
                 const cleanedLine = line.trim();
@@ -624,7 +619,6 @@ app.post('/api/chat', async (req, res) => {
                         const parsed = JSON.parse(cleanedLine.replace(/^,/, ''));
                         const textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
                         if (textChunk) {
-                            charCount += textChunk.length;
                             res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
                         }
                     } catch (e) {}
@@ -639,7 +633,6 @@ app.post('/api/chat', async (req, res) => {
                             const parsed = JSON.parse(cleanedLine.slice(6));
                             const textChunk = parsed.choices?.[0]?.delta?.content;
                             if (textChunk) {
-                                charCount += textChunk.length;
                                 res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
                             }
                         } catch (e) {}
@@ -647,7 +640,6 @@ app.post('/api/chat', async (req, res) => {
                 }
             }
 
-            console.log(`[🏁 送信完了] ${prov.name} 正常終了。出力: ${charCount} 文字`);
             res.write('data: [DONE]\n\n');
             res.end();
             isSuccess = true;
@@ -669,10 +661,9 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// サーバー起動
 app.listen(PORT, () => {
     console.log(`===================================================`);
-    console.log(` Voton Lemon AI (マルチAPI・マルチモーダル連動版) が起動しました。`);
+    console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
     console.log(` ポート: ${PORT}`);
     console.log(`===================================================`);
 });
