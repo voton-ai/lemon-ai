@@ -126,7 +126,6 @@
                     <span>AIをカスタマイズ設定</span>
                 </div>
 
-                <!-- キャラクター性格選択 (レモンを撤廃しニュートラルに変更) -->
                 <div class="space-y-1.5">
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400">アシスタントの性格</label>
                     <select id="sys-prompt-select" onchange="applyPromptTemplate()" class="w-full bg-white dark:bg-slate-900 border border-amber-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none">
@@ -148,10 +147,11 @@
                         <span>回答の柔軟性</span>
                         <span id="temp-display-val" class="text-amber-600 dark:text-amber-400 font-mono">普通 (0.7)</span>
                     </div>
-                    <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.1" value="0.7" oninput="updateTempDisplay()" class="w-full h-1.5 bg-amber-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500">
+                    <!-- 安全対策：崩壊を防ぐためスライダーの上限を1.0に制限 -->
+                    <input type="range" id="temp-slider" min="0.1" max="1.0" step="0.1" value="0.7" oninput="updateTempDisplay()" class="w-full h-1.5 bg-amber-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500">
                     <div class="flex justify-between text-[9px] text-slate-400">
                         <span>論理的・正確</span>
-                        <span>独創的・創造的</span>
+                        <span>創造的・ユニーク</span>
                     </div>
                 </div>
             </div>
@@ -318,7 +318,7 @@
             {
                 elementId: 'model-select',
                 title: '🧠 脳みそ(モデル)の切り替え',
-                body: '最高性能 of 「GrandPro」から、爆速な「Lite」まで4つの特性を持つモデルを自由に変更できます。'
+                body: '最高性能の「GrandPro」から、爆速な「Lite」まで4つの特性を持つモデルを自由に変更できます。'
             },
             {
                 elementId: 'guide-clear',
@@ -931,8 +931,7 @@
             
             let label = "普通";
             if (val <= 0.3) label = "論理的・正確";
-            else if (val >= 1.2) label = "とても独創的・ユーモラス";
-            else if (val >= 0.9) label = "独創的・クリエイティブ";
+            else if (val >= 0.9) label = "独創的・ユニーク";
 
             display.innerText = `${label} (${val})`;
             
