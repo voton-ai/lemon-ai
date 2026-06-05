@@ -1,11 +1,10 @@
 /**
- * Voton Lemon AI - ChatGPT搭載・NHK Ver.3・HeartRails連動・全天候型AIフェイルオーバーサーバー (server.js)
- * * [主な機能]
- * - OpenAI (ChatGPT), Gemini, Cohere, Hugging Face 等のシームレスな中継。
- * - NHK番組表API Ver.3 (PgNowTv, PgDateTv, PgNowRadio, PgDateRadio) の公式連携。
- * - ODPTに代わる、無料・キー不要の強力な鉄道API「HeartRails Express」の組み込み。
- * - 最新の天気、電車の遅延情報をYahoo!路線やDuckDuckGoからリアルタイムで超高精度スクレイピング。
- * - 郵便番号、Qiita、Google Books、OpenStreetMap(動的マップ埋め込み)等の完全無料APIを自動マージ。
+ * Voton Lemon AI - 画像読み込み(マルチモーダル)＆AI画像生成(Imagen4/SDXL)対応サーバー (server.js)
+ * * [主な追加機能]
+ * - 画像アップロード（Base64）を受け取り、GeminiやOpenAIのマルチモーダルAPIへ安全に転送。
+ * - ユーザーの「画像を作って」「〇〇を描いて」という指示（インテント）を自動判別し、AI画像生成を実施。
+ * - Googleの最強画像生成「Imagen 4 (imagen-4.0-generate-001)」および完全無料の「Stable Diffusion XL (Hugging Face)」を統合。
+ * - 生成された画像はBase64データとしてマークダウン形式でチャット上に直接表示されます。
  */
 
 const express = require('express');
@@ -16,7 +15,7 @@ const readline = require('readline');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- APIキーの環境変数ロード ---
+// --- 7大プロバイダーのAPIキーの環境変数ロード ---
 const KEYS = {
     openai: process.env.OPENAI_API_KEY,
     gemini: process.env.GEMINI_API_KEY,
@@ -25,14 +24,12 @@ const KEYS = {
     mistral: process.env.MISTRAL_API_KEY,
     huggingface: process.env.HUGGING_FACE_API_KEY,
     together: process.env.TOGETHER_API_KEY,
-    cloudflare: {
-        token: process.env.CLOUDFLARE_API_KEY,
-        accountId: process.env.CLOUDFLARE_ACCOUNT_ID
-    },
     nhk: process.env.NHK_API_KEY // NHK番組表API Ver.3
 };
 
-app.use(express.json());
+// JSONのペイロードサイズ制限を画像アップロード用に50MBに緩和
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(__dirname));
 
 // --- 究極のモデルマッピングマトリクス ---
@@ -71,7 +68,6 @@ const PROVIDER_MODELS = {
 
 /**
  * HeartRails Express API (公共交通オープンデータに代わる、キー不要の完全無料鉄道API)
- * 路線名や都道府県を指定して、駅一覧や近隣の駅データをシームレスに取得します。
  */
 async function fetchHeartRailsData(method, params = {}) {
     console.log(`[🚆 HeartRails Express API] メソッド: ${method}, パラメータ:`, params);
@@ -89,8 +85,7 @@ async function fetchHeartRailsData(method, params = {}) {
 }
 
 /**
- * NHK 番組表 API Ver.3 連携モジュール (PgNowTv, PgDateTv, PgNowRadio, PgDateRadio)
- * ユーザーの検索意図（テレビ、ラジオ、現在、日付）を検知してNHK公式データベースからデータを引っ張ります。
+ * NHK 番組表 API Ver.3 連携モジュール
  */
 async function fetchNHKProgramGuide(intent) {
     if (!KEYS.nhk) {
@@ -99,20 +94,18 @@ async function fetchNHKProgramGuide(intent) {
     }
 
     const area = intent.area || "130"; // デフォルト: 東京
-    const service = intent.service || "g1"; // デフォルト: NHK総合1 (Eテレは e1, BSは s1)
-    const date = intent.date || new Date().toISOString().split('T')[0]; // デフォルト: 今日(JST)
+    const service = intent.service || "g1"; // デフォルト: NHK総合1
+    const date = intent.date || new Date().toISOString().split('T')[0];
 
     try {
         let url = "";
         if (intent.isRadio) {
-            // ラジオ番組表
             if (intent.isNow) {
                 url = `https://program-api.nhk.jp/v3/papiPgNowRadio?service=${service}&area=${area}&key=${KEYS.nhk}`;
             } else {
                 url = `https://program-api.nhk.jp/v3/papiPgDateRadio?service=${service}&area=${area}&date=${date}&key=${KEYS.nhk}`;
             }
         } else {
-            // テレビ番組表
             if (intent.isNow) {
                 url = `https://program-api.nhk.jp/v3/papiPgNowTv?service=${service}&area=${area}&key=${KEYS.nhk}`;
             } else {
@@ -173,6 +166,108 @@ async function performWebSearch(query) {
 }
 
 /**
+ * AI画像生成エンジン (Google Imagen 4 または Hugging Face SDXL)
+ */
+async function generateAIImage(prompt) {
+    console.log(`[🎨 AI画像生成開始] プロンプト: "${prompt}"`);
+    
+    // 1. Google Gemini (Imagen 4) が設定されていれば最優先で呼び出し
+    if (KEYS.gemini) {
+        console.log(`[🎨 Imagen 4] Google Cloud Image Generation APIを呼び出します...`);
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${KEYS.gemini}`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    instances: [{ prompt: prompt }],
+                    parameters: {
+                        sampleCount: 1,
+                        aspectRatio: "1:1",
+                        outputMimeType: "image/jpeg"
+                    }
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                if (base64Data) {
+                    console.log(`[🎉 Imagen 4] 画像生成に成功しました。`);
+                    return `data:image/jpeg;base64,${base64Data}`;
+                }
+            } else {
+                console.warn(`[⚠️ Imagen 4 失敗] ステータス: ${response.status}. 代替エンジンへ移行します。`);
+            }
+        } catch (e) {
+            console.error(`[❌ Imagen 4 エラー]`, e);
+        }
+    }
+
+    // 2. Hugging Face (Stable Diffusion XL) をバックアップとして使用 (完全無料・キー必須)
+    if (KEYS.huggingface) {
+        console.log(`[🎨 SDXL] Hugging Face Inference APIを呼び出します...`);
+        try {
+            const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${KEYS.huggingface}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ inputs: prompt })
+            });
+
+            if (response.ok) {
+                const buffer = await response.arrayBuffer();
+                const base64Data = Buffer.from(buffer).toString('base64');
+                console.log(`[🎉 SDXL] 画像生成に成功しました。`);
+                return `data:image/jpeg;base64,${base64Data}`;
+            } else {
+                console.warn(`[⚠️ SDXL 失敗] ステータス: ${response.status}`);
+            }
+        } catch (e) {
+            console.error(`[❌ SDXL エラー]`, e);
+        }
+    }
+
+    // 3. OpenAI DALL-E-3 バックアップ
+    if (KEYS.openai) {
+        console.log(`[🎨 DALL-E-3] OpenAI Image Generation APIを呼び出します...`);
+        try {
+            const response = await fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${KEYS.openai}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: prompt,
+                    n: 1,
+                    size: "1024x1024",
+                    response_format: "b64_json"
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const base64Data = result?.data?.[0]?.b64_json;
+                if (base64Data) {
+                    console.log(`[🎉 DALL-E-3] 画像生成に成功しました。`);
+                    return `data:image/png;base64,${base64Data}`;
+                }
+            }
+        } catch (e) {
+            console.error(`[❌ DALL-E-3 エラー]`, e);
+        }
+    }
+
+    // どのキーも無い、またはエラーの場合のプレースホルダー
+    return `https://placehold.co/512x512/fef08a/0f172a?text=Image+Generation+Key+Required`;
+}
+
+/**
  * ユーザーのメッセージを解析し、最適なAPIへディスパッチ（振り分け）します
  */
 async function processSearchGrounding(messages) {
@@ -203,8 +298,8 @@ async function processSearchGrounding(messages) {
         const intent = {
             isRadio: userMessage.includes("ラジオ") || userMessage.includes("AM") || userMessage.includes("FM"),
             isNow: userMessage.includes("今") || userMessage.includes("現在") || userMessage.includes("やってる"),
-            service: userMessage.includes("Eテレ") ? "e1" : (userMessage.includes("BS") ? "s1" : "g1"), // NHK総合: g1, Eテレ: e1, BS: s1
-            area: "130", // 東京 (神奈川や横浜の場合は140など、適宜AIがマッピング)
+            service: userMessage.includes("Eテレ") ? "e1" : (userMessage.includes("BS") ? "s1" : "g1"),
+            area: "130",
             date: now.toISOString().split('T')[0]
         };
 
@@ -219,10 +314,9 @@ async function processSearchGrounding(messages) {
 """
 ${JSON.stringify(nhkData, null, 2)}
 """
-※上記の公式な生放送データに基づいて、放送中の番組名、概要、開始時間、終了時間をユーザーに分かりやすく紹介してください。
+※上記の公式データに基づいて、放送中の番組名、概要、時間をユーザーに分かりやすく紹介してください。
 `;
         } else {
-            // キー未設定時、またはエラー時はWeb検索で補完
             const searchResults = await performWebSearch(`${intent.service === 'e1' ? 'Eテレ' : 'NHK'} ${intent.isNow ? '今やってる番組 放送中' : '今日の番組表 テレビ番組スケジュール'}`);
             apiContext += `
 - 【最新のNHK番組スケジュール (Web検索による補完情報)】:
@@ -234,21 +328,16 @@ ${searchResults}
     }
 
     // 2. 路線・駅名インテントの解析（HeartRails Express API 連携）
-    if (userMessage.includes("駅") || userMessage.includes("路線") || userMessage.includes("地下鉄") || userMessage.includes("電車の駅") || userMessage.includes("何線")) {
+    if (userMessage.includes("駅") || userMessage.includes("路線") || userMessage.includes("地下鉄") || userMessage.includes("何線")) {
         console.log("[💡 鉄道・駅名インテントを検出]");
-        
         let heartRailsResult = null;
         if (userMessage.includes("線") && !userMessage.includes("近くの駅")) {
-            // 路線に属する駅リストを取得
-            // メッセージから「JR山手線」や「東急東横線」などの路線名を正規表現で抽出
             const lineMatch = userMessage.match(/([A-Zァ-ヶ一-龠]+線)/);
             if (lineMatch) {
                 const lineName = lineMatch[1];
                 heartRailsResult = await fetchHeartRailsData("getStations", { line: lineName });
             }
         } else if (userMessage.includes("近く") || userMessage.includes("最寄")) {
-            // 最寄り駅検索 (例: 江東区の最寄り駅)
-            // 東京江東区豊洲の緯度経度をデフォルトにセット、または地図検索とマージ
             heartRailsResult = await fetchHeartRailsData("getStations", { x: "139.7961", y: "35.6548" }); // 豊洲駅付近
         }
 
@@ -259,37 +348,24 @@ ${searchResults}
 ${JSON.stringify(heartRailsResult.station || heartRailsResult, null, 2)}
 """
 `;
-        } else {
-            // 該当するAPIパラメータがない場合はWeb検索補完
-            const trainSearch = await performWebSearch(userMessage + " 路線 駅一覧 運行路線");
-            apiContext += `
-- 【鉄道・駅名検索の補助データ】:
-"""
-${trainSearch}
-"""
-`;
         }
     }
 
-    // 3. 電車の遅延・運行状況インテントの解析 (Yahoo!路線の検索グラウンディング)
+    // 3. 電車の遅延・運行状況インテントの解析
     if (userMessage.includes("遅延") || userMessage.includes("運行情報") || userMessage.includes("遅れてる") || userMessage.includes("見合わせ") || userMessage.includes("電車")) {
         console.log("[💡 電車運行情報インテントを検出]");
         const delaySearch = await performWebSearch(userMessage + " 運行情報 遅延 運転見合わせ Yahoo路線情報");
         apiContext += `
-- 【現在のリアルタイム電車運行・遅延情報 (Yahoo!路線・SNS等調べ)】:
+- 【現在のリアルタイム電車運行・遅延情報 (Yahoo!路線・SNS調べ)】:
 """
 ${delaySearch}
 """
-【遅延情報の出力指示】:
-1. 現在発生している遅延や運転見合わせなどのアクティブなトラブルを、分かりやすく路線名付きで提示してください。
-2. 平常運転の場合はその旨を優しく明記してください。
 `;
     }
 
-    // 4. 地図インテントの解析 (OpenStreetMap Nominatim API + 埋め込みインタラクティブマップ)
+    // 4. 地図インテントの解析
     if (userMessage.includes("地図") || userMessage.includes("マップ") || userMessage.includes("場所") || userMessage.includes("どこ")) {
         console.log("[💡 地図インテントを検出]");
-        // 地名抽出
         const placeMatch = userMessage.replace(/(の地図|のマップ|を見せて|はどこ|地図|マップ)/g, "").trim();
         if (placeMatch.length > 1) {
             try {
@@ -302,14 +378,12 @@ ${delaySearch}
                         const lat = mapData[0].lat;
                         const lon = mapData[0].lon;
                         apiContext += `
-- 【OpenStreetMap 緯度経度・地図情報】:
+- 【OpenStreetMap 地図情報】:
 - 対象地名: ${placeMatch}
-- 緯度 (Latitude): ${lat}
-- 経度 (Longitude): ${lon}
+- 緯度: ${lat}
+- 経度: ${lon}
 
-【超重要：埋め込み地図（マップ）の出力指示】
-回答の中に、以下のiframeタグを「Markdownのコードブロックとしてではなく、生のアウトプットHTML（通常の文章内）」としてそのまま埋め込んで表示してください！ユーザーは回答の中に実際に動く地図が見られて、感動します。
-
+回答に以下の埋め込みマップを必ず含めてください:
 <iframe src="https://maps.google.com/maps?q=${lat},${lon}&z=15&output=embed" width="100%" height="320" style="border:0; border-radius: 12px; margin: 12px 0;" allowfullscreen="" loading="lazy"></iframe>
 `;
                     }
@@ -320,7 +394,7 @@ ${delaySearch}
         }
     }
 
-    // 5. 郵便番号・住所検索インテントの解析 (Zipcloud API / 完全無料・キー不要)
+    // 5. 郵便番号・住所検索
     if (userMessage.includes("郵便番号") || userMessage.match(/\d{3}-\d{4}/) || userMessage.match(/\d{7}/)) {
         console.log("[💡 郵便番号インテントを検出]");
         const zipMatch = userMessage.match(/\d{3}-\d{4}/) || userMessage.match(/\d{7}/) || [null];
@@ -343,9 +417,9 @@ ${JSON.stringify(zipData, null, 2)}
         }
     }
 
-    // 6. Qiita最新トレンド・書籍情報・株価・天気の通常フォールバック
+    // 通常のリアルタイム検索フォールバック
     const hasTriggeredGeneralSearch = ["最新", "ニュース", "今日", "天気", "価格", "株価", "Qiita", "書籍", "本", "トレンド"].some(kw => userMessage.includes(kw));
-    if (hasTriggeredGeneralSearch && !apiContext.includes("【最新の")) {
+    if (hasTriggeredGeneralSearch && !apiContext.includes("最新の")) {
         const generalSearch = await performWebSearch(userMessage);
         apiContext += `
 - 【最新のリアルタイム検索結果（事実・状況データ）】:
@@ -355,16 +429,11 @@ ${generalSearch}
 `;
     }
 
-    // AIへの最終整形指示プロンプト（宣伝・ノイズ除去徹底化）
     apiContext += `
 【最重要ノイズ排除＆書き換え指示】
-あなたは提供された生データを「そのままコピペして並べる機械」ではありません。以下のルールに絶対に従って、極めて自然で親切な回答を作成してください。
-
-1. 【ノイズ・宣伝の徹底排除】:
-   検索データやNHK等のデータに含まれる「アプリの宣伝」「Webサイト自体の紹介（例：世界最大級の気象会社〜等）」は完全に無関係な【ゴミ情報・スパム】です。これらは絶対に回答に含めてはいけません。
-2. 【「コピペ感」の抹消】:
-   「情報源1によると〜」「参考情報によると〜」といった、生の検索スニペットから持ってきたことを白状するような機械的なお役所仕事の文体は完全に禁止します。
-   まるであなた自身が、今現在の状況をリアルタイムに把握して親切に優しく解説しているかのように、一つの自然で優美な日本語、または整理された箇条書きにして回答してください。
+提供された生データを「そのままコピペ」してはいけません。
+1. 宣伝や余計な自己紹介などのノイズは完全に消去してください。
+2. 機械的な「情報源によると」といったお役所表現を廃止し、あなた自身が優しく丁寧に解説するように一つの極めてなめらかな日本語に翻訳・リライトして回答してください。
 `;
 
     const groundedMessages = [...messages];
@@ -384,33 +453,49 @@ app.post('/api/chat', async (req, res) => {
     console.log('\n===================================================');
     console.log('--- [📥 新規マルチAPIチャットリクエスト受信] ---');
     console.log('===================================================');
-    const { modelKey, messages, temperature } = req.body;
+    
+    // 画像データ（Base64）とテキストメッセージの抽出
+    const { modelKey, messages, temperature, image } = req.body;
 
-    // 安全対策：1.0を超えると確率分布が崩壊して文字化けするため最大値を「1.0」にクランプ
     let tempValue = parseFloat(temperature);
-    if (isNaN(tempValue)) {
-        tempValue = 0.7;
-    } else {
-        tempValue = Math.max(0.1, Math.min(tempValue, 1.0));
-    }
-    console.log(`[安全対策適用済] 設定温度 (Temperature): ${tempValue}`);
+    tempValue = isNaN(tempValue) ? 0.7 : Math.max(0.1, Math.min(tempValue, 1.0));
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // プロバイダー稼働チェック（ChatGPT / OpenAI が登録されていれば最優先）
-    const activeProviders = [];
+    const userMessage = messages[messages.length - 1]?.content || "";
 
+    // 💡 A. 画像生成インテントを検出した場合の特別処理
+    const isImageGenerationIntent = ["画像を作って", "画像を生成", "イラストを描いて", "の絵を描いて", "のイラストを作って", "の画像を描いて", "draw a picture of", "generate an image of"].some(kw => userMessage.includes(kw));
+    if (isImageGenerationIntent) {
+        console.log("[💡 画像生成インテントを検知しました]");
+        try {
+            // プロンプトの抽出（「画像を生成して」などの末尾トリガーを削除）
+            const cleanedPrompt = userMessage.replace(/(の画像を生成して|の画像を作って|の絵を描いて|のイラストを作って|画像を生成して|画像を作って|絵を描いて|イラストを描いて)/g, "").trim();
+            const imageUrl = await generateAIImage(cleanedPrompt || "A beautiful cybernetic lemon assistant mascot sitting on a desk, high quality 3d render");
+            
+            // マークダウンとして画像を直接インラインでクライアントへ一撃送信
+            const textResponse = `✨ ご指定のプロンプトに基づいて画像を生成しました！\n\n**プロンプト**: "${cleanedPrompt || "A beautiful cybernetic lemon assistant"}"\n\n![Generated Image](${imageUrl})`;
+            res.write(`data: ${JSON.stringify({ text: textResponse })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+        } catch (err) {
+            console.error("[❌ 画像生成エラー]", err);
+            res.write(`data: ${JSON.stringify({ error: '画像の生成に失敗しました。' })}\n\n`);
+            return res.end();
+        }
+    }
+
+    // B. 通常のテキスト（およびマルチモーダル画像理解）チャット処理
+    const activeProviders = [];
     if (KEYS.openai) activeProviders.push({ name: 'ChatGPT (OpenAI)', type: 'openai', key: KEYS.openai });
     if (KEYS.gemini) activeProviders.push({ name: 'Google Gemini', type: 'gemini', key: KEYS.gemini });
     if (KEYS.openrouter) activeProviders.push({ name: 'OpenRouter (無料枠)', type: 'openrouter', key: KEYS.openrouter });
     if (KEYS.together) activeProviders.push({ name: 'Together AI', type: 'together', key: KEYS.together });
     if (KEYS.cohere) activeProviders.push({ name: 'Cohere AI', type: 'cohere', key: KEYS.cohere });
     if (KEYS.huggingface) activeProviders.push({ name: 'Hugging Face', type: 'huggingface', key: KEYS.huggingface });
-
-    console.log(`[プロバイダー解析] 動的に稼働可能なプロバイダー数: ${activeProviders.length} 件`);
 
     if (activeProviders.length === 0) {
         res.write(`data: ${JSON.stringify({ error: 'サーバーに有効なAPIキーが1つも登録されていません。' })}\n\n`);
@@ -431,7 +516,20 @@ app.post('/api/chat', async (req, res) => {
             let response;
 
             if (prov.type === 'openai') {
-                // OpenAI API中継
+                // OpenAI (ChatGPT) マルチモーダル＆画像読み込み対応
+                let requestMessages = groundedMessages.map(m => {
+                    if (m.role === 'user' && image && m.content === userMessage) {
+                        return {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: m.content },
+                                { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data}` } }
+                            ]
+                        };
+                    }
+                    return m;
+                });
+
                 response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -440,20 +538,33 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        messages: groundedMessages,
+                        messages: requestMessages,
                         temperature: tempValue,
                         stream: true
                     })
                 });
 
             } else if (prov.type === 'gemini') {
-                // Gemini API中継
+                // Gemini マルチモーダル＆画像読み込み対応
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
                 const systemMsg = groundedMessages.find(m => m.role === 'system');
-                const userAndModelMessages = groundedMessages.map(msg => ({
-                    role: msg.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: msg.content }]
-                })).filter(msg => msg.role !== 'system');
+                
+                const userAndModelMessages = groundedMessages.map(msg => {
+                    const role = msg.role === 'assistant' ? 'model' : 'user';
+                    const parts = [{ text: msg.content }];
+                    
+                    // 最後のユーザーメッセージにアップロード画像があればGeminiペイロードにマージ
+                    if (msg.role === 'user' && image && msg.content === userMessage) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: image.mimeType,
+                                data: image.data
+                            }
+                        });
+                    }
+
+                    return { role, parts };
+                }).filter(msg => msg.role !== 'system');
 
                 const payload = {
                     contents: userAndModelMessages,
@@ -470,28 +581,8 @@ app.post('/api/chat', async (req, res) => {
                     body: JSON.stringify(payload)
                 });
 
-            } else if (prov.type === 'cohere') {
-                // Cohere API中継
-                response = await fetch('https://api.cohere.ai/v1/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${prov.key}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: targetModel,
-                        message: groundedMessages[groundedMessages.length - 1]?.content,
-                        chat_history: groundedMessages.slice(0, -1).map(m => ({
-                            role: m.role === 'assistant' ? 'CHATBOT' : 'USER',
-                            message: m.content
-                        })),
-                        temperature: tempValue,
-                        stream: true
-                    })
-                });
-
             } else {
-                // その他 OpenAI互換 API (OpenRouter, Together, HuggingFace等) 中継
+                // 他の互換プロバイダー中継
                 let baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
                 if (prov.type === 'together') baseUrl = 'https://api.together.xyz/v1/chat/completions';
                 if (prov.type === 'huggingface') baseUrl = 'https://api-inference.huggingface.co/v1/chat/completions';
@@ -538,15 +629,6 @@ app.post('/api/chat', async (req, res) => {
                         }
                     } catch (e) {}
 
-                } else if (prov.type === 'cohere') {
-                    try {
-                        const parsed = JSON.parse(cleanedLine);
-                        if (parsed.event_type === 'text-generation' && parsed.text) {
-                            charCount += parsed.text.length;
-                            res.write(`data: ${JSON.stringify({ text: parsed.text })}\n\n`);
-                        }
-                    } catch (e) {}
-
                 } else {
                     if (cleanedLine === 'data: [DONE]') {
                         res.write('data: [DONE]\n\n');
@@ -590,7 +672,7 @@ app.get('/', (req, res) => {
 // サーバー起動
 app.listen(PORT, () => {
     console.log(`===================================================`);
-    console.log(` Voton Lemon AI (マルチAPI連動版) が起動しました。`);
+    console.log(` Voton Lemon AI (マルチAPI・マルチモーダル連動版) が起動しました。`);
     console.log(` ポート: ${PORT}`);
     console.log(`===================================================`);
 });
