@@ -5,6 +5,7 @@
  * - すべてのAIプロバイダーで「現在日時」「リアルタイムWeb検索」を利用可能。
  * - Web検索エンジン（DuckDuckGo）からより多くのテキストスニペットを抽出し、AIへの指示プロンプトを徹底強化。
  * - AIに対して「検索結果の断片情報をそのまま繰り返すのではなく、背景知識や関連情報を交えて、深く、構造化された丁寧な長文回答を作成せよ」と制限。
+ * - 安全対策：フロントエンド等から極端に高い温度(例: 1.5)が送信された際、AIの出力崩壊を防ぐため上限を自動クランプ処理します。
  */
 
 const express = require('express');
@@ -97,7 +98,6 @@ async function performWebSearch(query) {
         const html = await response.text();
         
         const results = [];
-        // タイトル、URL、スニペットを極力広く収集
         const regex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
         let match;
         
@@ -173,7 +173,6 @@ ${searchResults}
 3. 検索結果にない不確かな事柄を事実として断言することは避けつつ、事実に基づく論理的な解説を行ってください。
 `;
     } else {
-        // 通常の会話であっても日時情報を認識させる
         groundingContext += `\n現在時刻や日付に関する質問がある場合は、上記のシステム時間に基づいて正確に回答してください。`;
     }
 
@@ -181,10 +180,8 @@ ${searchResults}
     const systemInstructionIndex = groundedMessages.findIndex(m => m.role === 'system');
 
     if (systemInstructionIndex !== -1) {
-        // システムプロンプトが存在する場合はそこにブレンド
         groundedMessages[systemInstructionIndex].content += "\n" + groundingContext;
     } else {
-        // 存在しない場合は新規に作成
         groundedMessages.unshift({ role: 'system', content: groundingContext });
     }
 
@@ -199,15 +196,22 @@ app.post('/api/chat', async (req, res) => {
     const { modelKey, messages, temperature } = req.body;
 
     console.log(`[基本データ] クライアント指定モデルキー: "${modelKey}"`);
-    console.log(`[基本データ] 設定温度 (Temperature): ${temperature}`);
+    console.log(`[基本データ] クライアント指定温度: ${temperature}`);
     
-    // クライアントに先にストリーミング接続ヘッダーを返却
+    // 安全対策：1.0を超えると大半のモデルの確率分布が崩壊して文字化けを引き起こすため最大値を「1.0」にクランプ
+    let tempValue = parseFloat(temperature);
+    if (isNaN(tempValue)) {
+        tempValue = 0.7;
+    } else {
+        tempValue = Math.max(0.1, Math.min(tempValue, 1.0));
+    }
+    console.log(`[安全対策適用] 制限適用後の設定温度 (Temperature): ${tempValue}`);
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // 優先順位リストを動的に構築
     const activeProviders = [];
 
     if (KEYS.gemini) activeProviders.push({ name: 'Google Gemini', type: 'gemini', key: KEYS.gemini });
@@ -228,16 +232,12 @@ app.post('/api/chat', async (req, res) => {
         return res.end();
     }
 
-    // すべてのモデルでWeb検索＆最新日時情報グラウンディングを適用
     const groundedMessages = await processSearchGrounding(messages);
-
     let isSuccess = false;
 
-    // 稼働可能なプロバイダーを順番に試行
     for (let i = 0; i < activeProviders.length; i++) {
         const prov = activeProviders[i];
         const targetModel = PROVIDER_MODELS[prov.type][modelKey] || PROVIDER_MODELS[prov.type]['lemon-normal'];
-        const tempValue = parseFloat(temperature) !== undefined ? parseFloat(temperature) : 0.7;
 
         console.log(`\n--- [🔄 試行 ${i + 1}/${activeProviders.length}] プロバイダー: ${prov.name} ---`);
         console.log(`[中継詳細] 送信先モデル名: "${targetModel}"`);
@@ -246,7 +246,6 @@ app.post('/api/chat', async (req, res) => {
             let response;
 
             if (prov.type === 'gemini') {
-                // --- Google Gemini API 接続処理 ---
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
                 
                 const systemMsg = groundedMessages.find(m => m.role === 'system');
@@ -273,7 +272,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'openrouter') {
-                // --- OpenRouter API 接続処理 ---
                 response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -291,7 +289,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'together') {
-                // --- Together AI API 接続処理 (OpenAI互換) ---
                 response = await fetch('https://api.together.xyz/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -307,7 +304,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'cohere') {
-                // --- Cohere API 接続処理 ---
                 response = await fetch('https://api.cohere.ai/v1/chat', {
                     method: 'POST',
                     headers: {
@@ -327,7 +323,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'huggingface') {
-                // --- Hugging Face Serverless API 接続処理 ---
                 const hfUrl = `https://api-inference.huggingface.co/v1/chat/completions`;
                 response = await fetch(hfUrl, {
                     method: 'POST',
@@ -344,7 +339,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'mistral') {
-                // --- Mistral AI API 接続処理 ---
                 response = await fetch('https://api.mistral.ai/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -360,7 +354,6 @@ app.post('/api/chat', async (req, res) => {
                 });
 
             } else if (prov.type === 'cloudflare') {
-                // --- Cloudflare Workers AI 接続処理 ---
                 const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${prov.extra}/ai/run/${targetModel}`;
                 response = await fetch(cfUrl, {
                     method: 'POST',
@@ -383,7 +376,6 @@ app.post('/api/chat', async (req, res) => {
                 continue; 
             }
 
-            // ストリームのリアルタイム解析・送信
             console.log(`[🎉 成功] ${prov.name} への接続に成功！中継を開始します。`);
             const nodeStream = Readable.from(response.body);
             const rl = readline.createInterface({ input: nodeStream, terminal: false });
