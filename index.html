@@ -214,20 +214,18 @@
                             マルチモーダル画像解析＆最新AI画像生成機能を完全搭載
                         </p>
                     </div>
-                    
-                    <!-- 新機能ハイライト -->
                     <div class="grid grid-cols-2 gap-3 text-left">
                         <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
                             <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
                                 <i data-lucide="image" class="w-3.5 h-3.5"></i> 画像を読み込ませる 🖼️
                             </span>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">画像（写真やスクリーンショット）を直接貼り付けたり選択して、AIに詳しく解説・質問させることができます。</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">写真を直接貼り付けたり選択して、AIに詳しく解説・質問させることができます。</p>
                         </div>
                         <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
                             <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
                                 <i data-lucide="palette" class="w-3.5 h-3.5"></i> 高精細画像生成 🎨
                             </span>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">「〜の画像を描いて」とチャットするだけで、Imagen 4 や SDXL エンジンが数秒でイラストを自動生成します。</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">「〜の画像を描いて」とチャットするだけで、無料・無制限のFLUX自動描画が走ります。</p>
                         </div>
                     </div>
                 </div>
@@ -381,7 +379,92 @@
 
             // ペーストイベントの監視（クリップボードから画像貼り付け用）
             document.addEventListener('paste', handleImagePaste);
+
+            // 【完全新機能】Pollinations共有IP混雑自動フォールバック監視システム（キャプチャフェーズ）
+            document.addEventListener('error', function(event) {
+                if (event.target && event.target.tagName === 'IMG' && event.target.src.includes('pollinations.ai')) {
+                    handlePollinationsError(event.target);
+                }
+            }, true);
+
+            document.addEventListener('load', function(event) {
+                if (event.target && event.target.tagName === 'IMG' && event.target.src.includes('pollinations.ai')) {
+                    let statusEl = event.target.previousElementSibling;
+                    if (statusEl && statusEl.classList.contains('img-status-indicator')) {
+                        statusEl.remove(); // 読み込み成功したら警告を綺麗に消去
+                    }
+                }
+            }, true);
         });
+
+        // 【新機能】共有IP制限(Queue Full)をねじ伏せる自動モデル変更リトライロジック
+        function handlePollinationsError(img) {
+            try {
+                const currentUrl = new URL(img.src);
+                const retryCount = parseInt(img.getAttribute('data-retry') || '0');
+                
+                if (retryCount === 0) {
+                    // 自動リトライ1回目: 制限の最も緩い高速モデル「turbo」に切り替え、シードをシャッフル
+                    img.setAttribute('data-retry', '1');
+                    currentUrl.searchParams.set('model', 'turbo');
+                    currentUrl.searchParams.set('seed', Math.floor(Math.random() * 1000000).toString());
+                    
+                    showImageStatus(img, '⚠️ サーバー混雑中。1秒後に高速モデル(Turbo)に自動切替して再挑戦します...', false);
+                    setTimeout(() => {
+                        img.src = currentUrl.toString();
+                    }, 1200);
+
+                } else if (retryCount === 1) {
+                    // 自動リトライ2回目: モデル「turbo」のまま少しディレイを長めにして別シードでトライ
+                    img.setAttribute('data-retry', '2');
+                    currentUrl.searchParams.set('model', 'turbo');
+                    currentUrl.searchParams.set('seed', Math.floor(Math.random() * 1000000).toString());
+                    
+                    showImageStatus(img, '⚠️ 回線混雑が続いています。再度、シード値を変更して接続します...', false);
+                    setTimeout(() => {
+                        img.src = currentUrl.toString();
+                    }, 2000);
+
+                } else {
+                    // 自動リカバリー失敗時: ユーザーが自分でタイミングをみてクリックできる手動ボタンを提供
+                    showImageStatus(img, '❌ 無料画像生成サーバーが現在大変混み合っています。', true);
+                }
+            } catch (e) {
+                console.error("[自動フォールバックエラー]", e);
+            }
+        }
+
+        // 画像枠の上部にかわいい状態ステータスと手動リトライボタンをマージ
+        function showImageStatus(img, text, showButton = false) {
+            let statusEl = img.previousElementSibling;
+            if (!statusEl || !statusEl.classList.contains('img-status-indicator')) {
+                statusEl = document.createElement('div');
+                statusEl.className = 'img-status-indicator text-[11px] font-bold text-amber-500 mb-2.5 flex flex-wrap items-center gap-1.5 p-2 bg-amber-50/50 dark:bg-slate-900/60 rounded-lg border border-amber-100/50 dark:border-slate-800';
+                img.parentNode.insertBefore(statusEl, img);
+            }
+            statusEl.innerHTML = `<span>${text}</span>`;
+            
+            if (showButton) {
+                statusEl.classList.remove('text-amber-500');
+                statusEl.classList.add('text-rose-500');
+                
+                const btn = document.createElement('button');
+                btn.className = 'ml-2 px-2 py-1 bg-yellow-400 hover:bg-yellow-300 text-slate-950 text-[10px] font-black rounded-lg transition-all shadow flex items-center gap-1';
+                btn.innerHTML = `<i data-lucide="rotate-cw" class="w-3 h-3"></i> 手動で再生成をリトライ`;
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    img.setAttribute('data-retry', '0');
+                    const url = new URL(img.src);
+                    url.searchParams.set('seed', Math.floor(Math.random() * 1000000).toString());
+                    url.searchParams.delete('model'); // 初期モデル（FLUX）に戻す
+                    img.src = url.toString();
+                    showImageStatus(img, '🔄 初期FLUXエンジンで再送信中...');
+                    lucide.createIcons();
+                };
+                statusEl.appendChild(btn);
+                lucide.createIcons();
+            }
+        }
 
         function toggleTheme() {
             currentTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -656,12 +739,10 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // クリップボタンのトリガー
         function triggerImageUpload() {
             document.getElementById('image-file-input').click();
         }
 
-        // ファイルダイアログからの画像選択
         function handleImageSelection(event) {
             const file = event.target.files[0];
             if (file) {
@@ -669,7 +750,6 @@
             }
         }
 
-        // コピペによる画像貼り付け
         function handleImagePaste(event) {
             const items = (event.clipboardData || event.originalEvent.clipboardData).items;
             for (let index in items) {
@@ -681,7 +761,6 @@
             }
         }
 
-        // 画像データのBase64化とプレビュー表示
         function processAndPreviewImage(file) {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -692,7 +771,6 @@
                     fileName: file.name
                 };
 
-                // UIプレビューの表示
                 document.getElementById('image-preview-img').src = e.target.result;
                 document.getElementById('image-preview-name').innerText = file.name;
                 document.getElementById('image-preview-container').classList.remove('hidden');
@@ -702,7 +780,6 @@
             reader.readAsDataURL(file);
         }
 
-        // プレビューの削除
         function removeSelectedImage() {
             selectedImageData = null;
             const container = document.getElementById('image-preview-container');
@@ -735,14 +812,12 @@
                 return;
             }
 
-            // 新規メッセージオブジェクト
             const userMsg = {
                 role: 'user',
                 content: messageText || "(画像をアップロードしました)",
                 time: Date.now()
             };
 
-            // 画像がある場合はメッセージに関連付ける
             if (selectedImageData) {
                 userMsg.attachedImage = { ...selectedImageData };
             }
@@ -762,22 +837,21 @@
 
             // インテント判別
             const isImageGen = ["画像を作って", "画像を生成", "イラストを描いて", "の絵を描いて", "のイラストを作って", "の画像を描いて", "draw a picture of", "generate an image of"].some(kw => messageText.includes(kw));
-            const searchKeywords = ["最新", "ニュース", "今日", "天気", "誰", "どこ", "何時", "2025", "2026", "検索", "調べて", "価格", "株価", "Qiita"];
+            const searchKeywords = ["最新", "ニュース", "今日", "天気", "誰", "どこ", "何時", "2025", "2026", "検索", "調べて", "価格", "株価", "Qiita", "テレビ", "番組表", "NHK", "運行", "遅延", "駅", "路線", "地図", "住所", "郵便番号"];
             const isSearching = searchKeywords.some(kw => messageText.includes(kw));
 
             const aiMsgIndex = chat.messages.length;
             
-            // ローディングステータス表示
             let initialLoadingHTML = '';
             if (isImageGen) {
                 initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
-                     <i data-lucide="palette" class="w-4 h-4 text-pink-500 animate-bounce animate-spin"></i>
+                     <i data-lucide="palette" class="w-4 h-4 text-pink-500 animate-spin"></i>
                      <span>🎨 AI画像生成エンジンが作動中（約5秒かかります）...</span>
                    </div>`;
             } else if (isSearching) {
                 initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
                      <i data-lucide="search" class="w-4 h-4 text-amber-500 animate-spin"></i>
-                     <span>🔍 最新のWeb情報を検索して解析中...</span>
+                     <span>🔍 12大外部APIとWeb情報を駆使して調査中...</span>
                    </div>`;
             } else {
                 initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
@@ -793,7 +867,6 @@
             });
             renderMessages();
 
-            // 送信後、すぐにプレビューを削除
             const currentImgPayload = selectedImageData ? { ...selectedImageData } : null;
             removeSelectedImage();
 
@@ -817,7 +890,6 @@
                 content: currentSystemPrompt
             });
 
-            // 最後のローディング中のメッセージを除いた会話履歴
             const history = chat.messages.slice(0, aiMsgIndex);
             history.forEach(m => {
                 chatPayload.push({ role: m.role, content: m.content });
@@ -834,7 +906,7 @@
                         modelKey: chat.modelKey || 'lemon-normal',
                         messages: chatPayload,
                         temperature: chat.temperature !== undefined ? chat.temperature : 0.7,
-                        image: imagePayload // マルチモーダル画像ペイロード
+                        image: imagePayload
                     }),
                     signal: abortController.signal
                 });
@@ -1004,7 +1076,7 @@
                 'standard': 'あなたは優秀で誠実なAIアシスタントです。質問に対して客観的で正確な回答を簡潔に提供してください。専門用語が必要な場合はわかりやすく解説し、構造化した見やすい文章を心がけてください。レモン偏重の語り口や特殊なペルソナは一切不要です。',
                 'teacher': 'あなたは「優秀な学校の先生」です。質問者が中学生であっても完璧に理解できるよう、専門用語をわかりやすい日本語に噛み砕き、図解をするように箇条書きを上手く使って温かく回答してください。',
                 'friend': 'あなたはフレンドリーな「友達」です。丁寧語は使わず、完全にフランクなタメ口で話し、共感を重視した絵文字を使いながら回答してください。',
-                'coder': 'あなたは世界トップクラスの「プログラマー」です。プログラムコードを出力する際はMarkdownのコードブロックを使用し、各コードにわかりやすい日本語のコメント・解説をつけて最高効率なコードのみを提示してください。',
+                'coder': 'あなたは世界トップクラスの「プログラマー」です。プログラムコードを出力する際はMarkdown of コードブロックを使用し、各コードにわかりやすい日本語のコメント・解説をつけて最高効率なコードのみを提示してください。',
                 'custom': ''
             };
 
