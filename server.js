@@ -1,9 +1,9 @@
 /**
- * Voton Lemon AI - 究極マルチプロバイダー・フェイルオーバーサーバー (server.js)
+ * Voton Lemon AI - 7大プロバイダー・フェイルオーバーサーバー (server.js)
  * * [特徴]
  * - フロントエンドの「index.html」を安全に配信します。
- * - バックエンドとして、6つの主要AIプロバイダーを安全に中継。
- * - 優先順位に基づき、あるAPIキーが上限（レートリミット/BAN）に達したら、次のAPIに自動で1秒未満で切り替えます（フェイルオーバー）。
+ * - バックエンドとして、Together AI (TOGETHER_API_KEY) を含む7つの主要AIプロバイダーを安全に中継。
+ * - あるAPIキーが上限（制限/BAN）に達したら、自動で次のプロバイダーへ1秒未満で切り替えます（フェイルオーバー）。
  * - 4つのモデル位置づけ（Lemon AI Lite〜GrandPro）を各プロバイダーの最適なモデルへと自動で翻訳マッピング。
  * - 随所に詳細なデバッグ用 console.log を仕込み、Renderのログ画面から切り替え状況を100%追跡可能。
  */
@@ -16,13 +16,14 @@ const readline = require('readline');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- 6大プロバイダーのAPIキーの環境変数ロード ---
+// --- 7大プロバイダーのAPIキーの環境変数ロード ---
 const KEYS = {
-    gemini: process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY, // 互換性のために両方をサポート
+    gemini: process.env.GEMINI_API_KEY,
     openrouter: process.env.OPENROUTER_API_KEY,
-    groq: process.env.GROQ_API_KEY,
-    mistral: process.env.MISTRAL_API_KEY,
     cohere: process.env.COHERE_API_KEY,
+    mistral: process.env.MISTRAL_API_KEY,
+    huggingface: process.env.HUGGING_FACE_API_KEY,
+    together: process.env.TOGETHER_API_KEY,
     cloudflare: {
         token: process.env.CLOUDFLARE_API_KEY,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID
@@ -32,38 +33,43 @@ const KEYS = {
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// --- 究極のモデルマッピングマトリクス ---
-// 各プロバイダーの中で、4つのLemon AIモデルの位置づけ（Lite / Normal / SP / GrandPro）に最も合致するモデルを厳選
+// --- 究極のモデルマッピングマトリクス (2026年最新稼働モデル) ---
 const PROVIDER_MODELS = {
     gemini: {
         'lemon-grandpro': 'gemini-2.5-pro',
         'lemon-sp': 'gemini-2.5-flash',
         'lemon-normal': 'gemini-2.5-flash',
-        'lemon-lite': 'gemini-2.5-flash-lite' // Liteには回数上限の多いFlash-Liteを割り当て
+        'lemon-lite': 'gemini-2.5-flash-lite'
     },
     openrouter: {
         'lemon-grandpro': 'meta-llama/llama-3.3-70b-instruct:free',
         'lemon-sp': 'meta-llama/llama-3.1-8b-instant:free',
-        'lemon-normal': 'google/gemma-2-9b-it:free', // 復活！OpenRouter経由ならGemma2無料枠が安全に使えます
+        'lemon-normal': 'qwen/qwen-2.5-7b-instruct:free', // 日本語が非常に得意な無料モデル
         'lemon-lite': 'meta-llama/llama-3.1-8b-instant:free'
     },
-    groq: {
-        'lemon-grandpro': 'llama-3.3-70b-versatile',
-        'lemon-sp': 'llama-3.1-8b-instant',
-        'lemon-normal': 'llama-3.1-8b-instant',
-        'lemon-lite': 'llama-3.1-8b-instant'
+    cohere: {
+        'lemon-grandpro': 'command-r-plus-08-2024',
+        'lemon-sp': 'command-r-08-2024',
+        'lemon-normal': 'command-r-08-2024',
+        'lemon-lite': 'command-r-08-2024'
     },
     mistral: {
-        'lemon-grandpro': 'mistral-large-latest', // 最上位モデル
+        'lemon-grandpro': 'mistral-large-latest',
         'lemon-sp': 'mistral-small-latest',
         'lemon-normal': 'open-mistral-7b',
         'lemon-lite': 'open-mistral-7b'
     },
-    cohere: {
-        'lemon-grandpro': 'command-r-plus', // 128kトークン・超優秀ビジネスモデル
-        'lemon-sp': 'command-r',
-        'lemon-normal': 'command-r',
-        'lemon-lite': 'command-r'
+    huggingface: {
+        'lemon-grandpro': 'Qwen/Qwen2.5-72B-Instruct',
+        'lemon-sp': 'meta-llama/Llama-3.2-3B-Instruct',
+        'lemon-normal': 'meta-llama/Llama-3.2-3B-Instruct',
+        'lemon-lite': 'meta-llama/Llama-3.2-3B-Instruct'
+    },
+    together: {
+        'lemon-grandpro': 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        'lemon-sp': 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+        'lemon-normal': 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+        'lemon-lite': 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'
     },
     cloudflare: {
         'lemon-grandpro': '@cf/meta/llama-3.1-70b-instruct',
@@ -76,7 +82,7 @@ const PROVIDER_MODELS = {
 // --- チャットストリーミング中継（フェイルオーバーコア） ---
 app.post('/api/chat', async (req, res) => {
     console.log('\n===================================================');
-    console.log('--- [📥 チャットリクエスト受信] ---');
+    console.log('--- [📥 新規チャットリクエスト受信] ---');
     console.log('===================================================');
     const { modelKey, messages, temperature } = req.body;
 
@@ -92,22 +98,15 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // 1. 環境変数にAPIキーが設定されているプロバイダーを抽出し、優先順リストを動的構築
+    // 優先順位リストを動的に構築
     const activeProviders = [];
 
-    if (KEYS.gemini) {
-        // キーの接頭辞をデバッグログに出力
-        const prefix = KEYS.gemini.substring(0, 7);
-        console.log(`[キーチェック] Gemini用キーを検出しました。 接頭辞: "${prefix}..."`);
-        if (!prefix.startsWith('AIzaSy')) {
-            console.log(`[⚠️ 警告] Gemini用キーの頭文字が "AIzaSy" ではありません。キーの選択に間違いがないか確認してください！`);
-        }
-        activeProviders.push({ name: 'Google Gemini', type: 'gemini', key: KEYS.gemini });
-    }
+    if (KEYS.gemini) activeProviders.push({ name: 'Google Gemini', type: 'gemini', key: KEYS.gemini });
     if (KEYS.openrouter) activeProviders.push({ name: 'OpenRouter (無料枠)', type: 'openrouter', key: KEYS.openrouter });
+    if (KEYS.together) activeProviders.push({ name: 'Together AI', type: 'together', key: KEYS.together });
     if (KEYS.cohere) activeProviders.push({ name: 'Cohere AI', type: 'cohere', key: KEYS.cohere });
+    if (KEYS.huggingface) activeProviders.push({ name: 'Hugging Face (サーバーレス)', type: 'huggingface', key: KEYS.huggingface });
     if (KEYS.mistral) activeProviders.push({ name: 'Mistral AI', type: 'mistral', key: KEYS.mistral });
-    if (KEYS.groq) activeProviders.push({ name: 'Groq (代替・回復時用)', type: 'groq', key: KEYS.groq });
     if (KEYS.cloudflare.token && KEYS.cloudflare.accountId) {
         activeProviders.push({ name: 'Cloudflare Workers AI', type: 'cloudflare', key: KEYS.cloudflare.token, extra: KEYS.cloudflare.accountId });
     }
@@ -119,13 +118,13 @@ app.post('/api/chat', async (req, res) => {
 
     if (activeProviders.length === 0) {
         console.error('[❌ エラー] 利用可能なAPIキーが環境変数に1つも設定されていません！');
-        res.write(`data: ${JSON.stringify({ error: 'サーバーにAPIキーが1つも登録されていません。Renderの環境変数（Environment Variables）を確認してください。' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'サーバーに有効なAPIキーが1つも登録されていません。Renderの環境変数（Environment Variables）を確認してください。' })}\n\n`);
         return res.end();
     }
 
     let isSuccess = false;
 
-    // 2. 稼働可能なプロバイダーを順番にフェイルオーバー試行
+    // 稼働可能なプロバイダーを順番に試行
     for (let i = 0; i < activeProviders.length; i++) {
         const prov = activeProviders[i];
         const targetModel = PROVIDER_MODELS[prov.type][modelKey] || PROVIDER_MODELS[prov.type]['lemon-normal'];
@@ -139,19 +138,7 @@ app.post('/api/chat', async (req, res) => {
 
             if (prov.type === 'gemini') {
                 // --- Google Gemini API 接続処理 ---
-                const isOAuthToken = prov.key.startsWith('AQ.');
-                let geminiUrl = '';
-                const headers = { 'Content-Type': 'application/json' };
-
-                if (isOAuthToken) {
-                    console.log('[🔑 Gemini認証] AQ.で始まるキーを検出しました。OAuthトークン認証（Authorizationヘッダー）を適用します。');
-                    geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent`;
-                    headers['Authorization'] = `Bearer ${prov.key}`;
-                } else {
-                    console.log('[🔑 Gemini認証] 標準キー（AIzaSy）のクエリパラメータ認証を適用します。');
-                    geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
-                }
-
+                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
                 const geminiMessages = messages.map(msg => ({
                     role: msg.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: msg.content }]
@@ -159,7 +146,7 @@ app.post('/api/chat', async (req, res) => {
 
                 response = await fetch(geminiUrl, {
                     method: 'POST',
-                    headers: headers,
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: geminiMessages,
                         generationConfig: { temperature: tempValue }
@@ -184,25 +171,9 @@ app.post('/api/chat', async (req, res) => {
                     })
                 });
 
-            } else if (prov.type === 'groq') {
-                // --- Groq API 接続処理 ---
-                response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${prov.key}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: targetModel,
-                        messages: messages,
-                        temperature: tempValue,
-                        stream: true
-                    })
-                });
-
-            } else if (prov.type === 'mistral') {
-                // --- Mistral AI API 接続処理 ---
-                response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            } else if (prov.type === 'together') {
+                // --- Together AI API 接続処理 (OpenAI互換) ---
+                response = await fetch('https://api.together.xyz/v1/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${prov.key}`,
@@ -236,6 +207,39 @@ app.post('/api/chat', async (req, res) => {
                     })
                 });
 
+            } else if (prov.type === 'huggingface') {
+                // --- Hugging Face Serverless API 接続処理 ---
+                const hfUrl = `https://api-inference.huggingface.co/v1/chat/completions`;
+                response = await fetch(hfUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${prov.key}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: targetModel,
+                        messages: messages,
+                        temperature: tempValue,
+                        stream: true
+                    })
+                });
+
+            } else if (prov.type === 'mistral') {
+                // --- Mistral AI API 接続処理 ---
+                response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${prov.key}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: targetModel,
+                        messages: messages,
+                        temperature: tempValue,
+                        stream: true
+                    })
+                });
+
             } else if (prov.type === 'cloudflare') {
                 // --- Cloudflare Workers AI 接続処理 ---
                 const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${prov.extra}/ai/run/${targetModel}`;
@@ -257,11 +261,11 @@ app.post('/api/chat', async (req, res) => {
             if (!response.ok) {
                 const errText = await response.text();
                 console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。次の代替プロバイダーへ移行します。エラー詳細:\n${errText}`);
-                continue; // ループを継続し、次のプロバイダーを試行
+                continue; // 次のプロバイダーへ
             }
 
-            // ストリームのリアルタイム解析・送信処理
-            console.log(`[🎉 成功] ${prov.name} への接続に成功！ブラウザへリアルタイム中継を開始します。`);
+            // ストリームのリアルタイム解析・送信
+            console.log(`[🎉 成功] ${prov.name} への接続に成功！中継を開始します。`);
             const nodeStream = Readable.from(response.body);
             const rl = readline.createInterface({ input: nodeStream, terminal: false });
 
@@ -294,7 +298,7 @@ app.post('/api/chat', async (req, res) => {
                     } catch (e) {}
 
                 } else {
-                    // --- OpenAI互換 (OpenRouter, Groq, Mistral, Cloudflare) 用パーサー ---
+                    // --- OpenAI互換用パーサー ---
                     if (cleanedLine === 'data: [DONE]') {
                         res.write('data: [DONE]\n\n');
                         continue;
@@ -316,15 +320,15 @@ app.post('/api/chat', async (req, res) => {
             res.write('data: [DONE]\n\n');
             res.end();
             isSuccess = true;
-            break; // 成功したため、プロバイダーループを完全に抜ける
+            break;
 
         } catch (error) {
-            console.error(`[❌ 接続失敗] ${prov.name} の通信中に例外が発生しました。次をテストします。エラー内容:`, error);
+            console.error(`[❌ 接続失敗] ${prov.name} の通信中に例外が発生しました。エラー内容:`, error);
         }
     }
 
     if (!isSuccess) {
-        console.error('[❌ 致命的] 環境変数に登録されたすべてのプロバイダーが制限に達したか、エラーで全滅しました。');
+        console.error('[❌ 致命的] 登録されているすべてのプロバイダーで通信エラー、または制限により失敗しました。');
         res.write(`data: ${JSON.stringify({ error: '現在すべての無料AI枠の制限に達してしまいました。お手数ですが、時間をおいて再度送信してください。' })}\n\n`);
         res.end();
     }
