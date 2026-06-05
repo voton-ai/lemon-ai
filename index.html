@@ -64,6 +64,14 @@
         .dark .tutorial-highlight {
             background-color: #0f172a !important;
         }
+        /* ふわふわ動くローディングアニメーション */
+        @keyframes pulse-slow {
+            0%, 100% { opacity: 0.4; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s infinite ease-in-out;
+        }
     </style>
 </head>
 <body id="app-body" class="h-full text-slate-800 bg-amber-50/40 dark:text-slate-100 dark:bg-slate-900 flex flex-col font-sans">
@@ -219,7 +227,7 @@
                             <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
                                 <i data-lucide="globe" class="w-3.5 h-3.5"></i> リアルタイム検索
                             </span>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Gemini経由時、自動でGoogle検索を行い、最新の天気やニュースを回答します。</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">すべてのモデルで自動でリアルタイムWeb検索を行い、最新情報をもとに詳しく回答します。</p>
                         </div>
                     </div>
                 </div>
@@ -310,7 +318,7 @@
             {
                 elementId: 'model-select',
                 title: '🧠 脳みそ(モデル)の切り替え',
-                body: '最高性能の「GrandPro」から、爆速な「Lite」まで4つの特性を持つモデルを自由に変更できます。'
+                body: '最高性能 of 「GrandPro」から、爆速な「Lite」まで4つの特性を持つモデルを自由に変更できます。'
             },
             {
                 elementId: 'guide-clear',
@@ -649,18 +657,37 @@
             renderChatList();
             renderMessages();
 
+            // リアルタイム検索を求めているか簡易解析
+            const searchKeywords = [
+                "最新", "ニュース", "今日", "いま", "天気", "誰", "どこ", "何時", 
+                "2025", "2026", "検索", "調べて", "とは", "について", "価格", "株価", "出来事", "トレンド"
+            ];
+            const isSearching = searchKeywords.some(kw => messageText.includes(kw));
+
             const aiMsgIndex = chat.messages.length;
+            
+            // 初期の「考え中... / 検索中...」ステータス表示を仕込む
+            const initialLoadingHTML = isSearching
+                ? `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
+                     <i data-lucide="search" class="w-4 h-4 text-amber-500 animate-spin"></i>
+                     <span>🔍 最新のWeb情報を検索して要約中...</span>
+                   </div>`
+                : `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
+                     <i data-lucide="loader" class="w-4 h-4 text-yellow-500 animate-spin"></i>
+                     <span>🧠 回答を準備しています...</span>
+                   </div>`;
+
             chat.messages.push({
                 role: 'assistant',
-                content: '',
+                content: initialLoadingHTML,
                 time: Date.now()
             });
             renderMessages();
 
-            await streamAIResponse(chat, aiMsgIndex);
+            await streamAIResponse(chat, aiMsgIndex, isSearching);
         }
 
-        async function streamAIResponse(chat, aiMsgIndex) {
+        async function streamAIResponse(chat, aiMsgIndex, isSearching) {
             isGenerating = true;
             toggleButtonStates(true);
             abortController = new AbortController();
@@ -677,12 +704,14 @@
                 content: currentSystemPrompt
             });
 
+            // 最後のローディング中のメッセージを除いた会話履歴
             const history = chat.messages.slice(0, aiMsgIndex);
             history.forEach(m => {
                 chatPayload.push({ role: m.role, content: m.content });
             });
 
             const chatMessagesContainer = document.getElementById('chat-messages');
+            let hasReceivedFirstChunk = false;
 
             try {
                 const response = await fetch('/api/chat', {
@@ -726,6 +755,11 @@
                                     throw new Error(parsed.error);
                                 }
                                 if (parsed.text) {
+                                    // 最初のトークンを受け取った瞬間にローディングを完全に消去
+                                    if (!hasReceivedFirstChunk) {
+                                        hasReceivedFirstChunk = true;
+                                        accumulatedText = '';
+                                    }
                                     accumulatedText += parsed.text;
                                     chat.messages[aiMsgIndex].content = accumulatedText;
                                     updateLastAIMessageUI(accumulatedText);
@@ -761,7 +795,12 @@
             if (!lastMessageWrapper) return;
             const textEl = lastMessageWrapper.querySelector('.response-text-content');
             if (textEl) {
-                textEl.innerHTML = marked.parse(text);
+                // 最初のプレーンテキスト/HTML判定
+                if (text.startsWith('<div')) {
+                    textEl.innerHTML = text; // ローディング表示中
+                } else {
+                    textEl.innerHTML = marked.parse(text); // AIテキスト生成中
+                }
             }
         }
 
