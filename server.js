@@ -1,11 +1,11 @@
 /**
- * Voton Lemon AI - 7大プロバイダー・フェイルオーバーサーバー (server.js)
+ * Voton Lemon AI - 7大プロバイダー対応・Google検索グラウンディング搭載サーバー (server.js)
  * * [特徴]
  * - フロントエンドの「index.html」を安全に配信します。
- * - バックエンドとして、Together AI (TOGETHER_API_KEY) を含む7つの主要AIプロバイダーを安全に中継。
- * - あるAPIキーが上限（制限/BAN）に達したら、自動で次のプロバイダーへ1秒未満で切り替えます（フェイルオーバー）。
+ * - Google Gemini API使用時に、本物の「Google検索グラウンディング（Google Search Grounding）」を有効化！
+ * - リアルタイムな最新情報、ニュース、天気などを自動でGoogle検索して正確に回答します。
+ * - 優先順位に基づき、あるAPIキーが上限に達したら自動で次のプロバイダーへ1秒未満で切り替えます（フェイルオーバー）。
  * - 4つのモデル位置づけ（Lemon AI Lite〜GrandPro）を各プロバイダーの最適なモデルへと自動で翻訳マッピング。
- * - 随所に詳細なデバッグ用 console.log を仕込み、Renderのログ画面から切り替え状況を100%追跡可能。
  */
 
 const express = require('express');
@@ -137,20 +137,33 @@ app.post('/api/chat', async (req, res) => {
             let response;
 
             if (prov.type === 'gemini') {
-                // --- Google Gemini API 接続処理 ---
+                // --- Google Gemini API 接続処理 (Google検索グラウンディングを統合) ---
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
-                const geminiMessages = messages.map(msg => ({
+                
+                // システムプロンプトを先頭から抽出してGeminiのSystemInstructionに綺麗にマッピング
+                const systemMsg = messages.find(m => m.role === 'system');
+                const userAndModelMessages = messages.map(msg => ({
                     role: msg.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: msg.content }]
                 })).filter(msg => msg.role !== 'system');
 
+                const payload = {
+                    contents: userAndModelMessages,
+                    generationConfig: { temperature: tempValue },
+                    // Google 検索グラウンディングを有効化！ (最新情報の取得を許可)
+                    tools: [{ google_search: {} }]
+                };
+
+                if (systemMsg) {
+                    payload.systemInstruction = {
+                        parts: [{ text: systemMsg.content }]
+                    };
+                }
+
                 response = await fetch(geminiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: geminiMessages,
-                        generationConfig: { temperature: tempValue }
-                    })
+                    body: JSON.stringify(payload)
                 });
 
             } else if (prov.type === 'openrouter') {
