@@ -1,11 +1,11 @@
 /**
- * Voton Lemon AI - 7大プロバイダー対応・Google検索グラウンディング搭載サーバー (server.js)
+ * Voton Lemon AI - 7大プロバイダー対応・全AIリアルタイム検索フェイルオーバーサーバー (server.js)
  * * [特徴]
  * - フロントエンドの「index.html」を安全に配信します。
- * - Google Gemini API使用時に、本物の「Google検索グラウンディング（Google Search Grounding）」を有効化！
- * - リアルタイムな最新情報、ニュース、天気などを自動でGoogle検索して正確に回答します。
+ * - 【NEW】すべてのAIプロバイダーで「現在日時」「リアルタイムWeb検索」を利用可能に！
+ * - ユーザーが「最新情報」「〜について検索して」「今、何時？」といった質問をした場合、
+ * サーバー側で無料のWeb検索（DuckDuckGo）を自動実行し、検索結果の要約をAIに渡して回答させます。
  * - 優先順位に基づき、あるAPIキーが上限に達したら自動で次のプロバイダーへ1秒未満で切り替えます（フェイルオーバー）。
- * - 4つのモデル位置づけ（Lemon AI Lite〜GrandPro）を各プロバイダーの最適なモデルへと自動で翻訳マッピング。
  */
 
 const express = require('express');
@@ -33,7 +33,7 @@ const KEYS = {
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// --- 究極のモデルマッピングマトリクス (2026年最新稼働モデル) ---
+// --- 究極のモデルマッピングマトリクス (2026年最新モデル) ---
 const PROVIDER_MODELS = {
     gemini: {
         'lemon-grandpro': 'gemini-2.5-pro',
@@ -44,7 +44,7 @@ const PROVIDER_MODELS = {
     openrouter: {
         'lemon-grandpro': 'meta-llama/llama-3.3-70b-instruct:free',
         'lemon-sp': 'meta-llama/llama-3.1-8b-instant:free',
-        'lemon-normal': 'qwen/qwen-2.5-7b-instruct:free', // 日本語が非常に得意な無料モデル
+        'lemon-normal': 'qwen/qwen-2.5-7b-instruct:free',
         'lemon-lite': 'meta-llama/llama-3.1-8b-instant:free'
     },
     cohere: {
@@ -79,6 +79,109 @@ const PROVIDER_MODELS = {
     }
 };
 
+/**
+ * 完全無料・キー不要の超軽量Web検索(DuckDuckGo HTML)スクレイパー
+ * AIに最新情報を提供するための最低限のテキストスニペットを取得します
+ */
+async function performWebSearch(query) {
+    console.log(`[🔍 検索実行] クエリ: "${query}"`);
+    try {
+        const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const response = await fetch(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+
+        if (!response.ok) return "検索結果を取得できませんでした。";
+
+        const html = await response.text();
+        
+        // 正規表現を用いた軽量な検索結果パース（HTMLタグ除去 & スニペット抽出）
+        const results = [];
+        const regex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+        let match;
+        
+        while ((match = regex.exec(html)) !== null && results.length < 5) {
+            let snippet = match[1]
+                .replace(/<[^>]*>/g, '') // タグ除去
+                .replace(/\s+/g, ' ')    // 余白の統一
+                .trim();
+            results.push(snippet);
+        }
+
+        if (results.length === 0) {
+            return "該当する検索結果が見つかりませんでした。";
+        }
+
+        return results.join("\n\n");
+    } catch (e) {
+        console.error("[❌ 検索エラー] 検索処理中に例外が発生しました:", e);
+        return "検索に失敗しました。";
+    }
+}
+
+/**
+ * ユーザーが検索を求めているキーワード（インテント）を解析し
+ * 必要であれば検索結果を格納したプロンプトに拡張します
+ */
+async function processSearchGrounding(messages) {
+    const userMessage = messages[messages.length - 1]?.content || "";
+    
+    // 検索が必要な質問かどうかのパターンマッチング
+    const searchKeywords = [
+        "最新", "ニュース", "今日", "いま", "天気", "誰", "どこ", "何時", 
+        "2025", "2026", "検索", "調べて", "とは", "について", "価格", "株価"
+    ];
+
+    const needsSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
+
+    if (!needsSearch) {
+        return messages; // 検索不要ならそのまま
+    }
+
+    console.log(`[💡 検索インテント検知] Web検索バックグラウンド処理を開始します...`);
+    const searchResults = await performWebSearch(userMessage);
+
+    // 取得した現在日時
+    const now = new Date();
+    const jstTime = new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        weekday: 'long'
+    }).format(now);
+
+    // 検索結果と現在の日時情報をユーザープロンプトの直前にコンテキストとして挿入
+    const groundedMessages = [...messages];
+    const systemInstructionIndex = groundedMessages.findIndex(m => m.role === 'system');
+
+    const groundingContext = `
+[ユーザーを支援するためのリアルタイム現在情報・コンテキスト]
+- 現在日時 (日本時間/JST): ${jstTime}
+- 現在地: 東京都江東区、日本
+- 最新のWeb検索結果 (DuckDuckGo調べ):
+"""
+${searchResults}
+"""
+
+上記の情報は100%正しい最新事実です。回答する際、AIの古い知識（知識カットオフ）よりも、上記の検索結果と現在日時を最優先し、最新の情報をベースに親切にニュートラルに回答を作成してください。`;
+
+    if (systemInstructionIndex !== -1) {
+        // システムプロンプトが存在する場合はそこにブレンド
+        groundedMessages[systemInstructionIndex].content += "\n" + groundingContext;
+    } else {
+        // 存在しない場合は新規に作成
+        groundedMessages.unshift({ role: 'system', content: groundingContext });
+    }
+
+    return groundedMessages;
+}
+
 // --- チャットストリーミング中継（フェイルオーバーコア） ---
 app.post('/api/chat', async (req, res) => {
     console.log('\n===================================================');
@@ -88,10 +191,7 @@ app.post('/api/chat', async (req, res) => {
 
     console.log(`[基本データ] クライアント指定モデルキー: "${modelKey}"`);
     console.log(`[基本データ] 設定温度 (Temperature): ${temperature}`);
-    if (messages && messages.length > 0) {
-        console.log(`[基本データ] ユーザー入力メッセージ: "${messages[messages.length - 1]?.content}"`);
-    }
-
+    
     // クライアントに先にストリーミング接続ヘッダーを返却
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -112,15 +212,15 @@ app.post('/api/chat', async (req, res) => {
     }
 
     console.log(`[プロバイダー解析] 動的に稼働可能なプロバイダー数: ${activeProviders.length} 件`);
-    activeProviders.forEach((p, idx) => {
-        console.log(`  -> 優先順位 ${idx + 1}: ${p.name}`);
-    });
 
     if (activeProviders.length === 0) {
         console.error('[❌ エラー] 利用可能なAPIキーが環境変数に1つも設定されていません！');
-        res.write(`data: ${JSON.stringify({ error: 'サーバーに有効なAPIキーが1つも登録されていません。Renderの環境変数（Environment Variables）を確認してください。' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'サーバーに有効なAPIキーが1つも登録されていません。Renderの環境変数を確認してください。' })}\n\n`);
         return res.end();
     }
+
+    // すべてのモデルでWeb検索＆最新日時情報グラウンディングを適用
+    const groundedMessages = await processSearchGrounding(messages);
 
     let isSuccess = false;
 
@@ -137,21 +237,18 @@ app.post('/api/chat', async (req, res) => {
             let response;
 
             if (prov.type === 'gemini') {
-                // --- Google Gemini API 接続処理 (Google検索グラウンディングを統合) ---
+                // --- Google Gemini API 接続処理 ---
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${prov.key}`;
                 
-                // システムプロンプトを先頭から抽出してGeminiのSystemInstructionに綺麗にマッピング
-                const systemMsg = messages.find(m => m.role === 'system');
-                const userAndModelMessages = messages.map(msg => ({
+                const systemMsg = groundedMessages.find(m => m.role === 'system');
+                const userAndModelMessages = groundedMessages.map(msg => ({
                     role: msg.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: msg.content }]
                 })).filter(msg => msg.role !== 'system');
 
                 const payload = {
                     contents: userAndModelMessages,
-                    generationConfig: { temperature: tempValue },
-                    // Google 検索グラウンディングを有効化！ (最新情報の取得を許可)
-                    tools: [{ google_search: {} }]
+                    generationConfig: { temperature: tempValue }
                 };
 
                 if (systemMsg) {
@@ -178,7 +275,7 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        messages: messages,
+                        messages: groundedMessages,
                         temperature: tempValue,
                         stream: true
                     })
@@ -194,7 +291,7 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        messages: messages,
+                        messages: groundedMessages,
                         temperature: tempValue,
                         stream: true
                     })
@@ -202,6 +299,7 @@ app.post('/api/chat', async (req, res) => {
 
             } else if (prov.type === 'cohere') {
                 // --- Cohere API 接続処理 ---
+                // Cohereは最新メッセージのみを渡すため、メッセージ群をシステム情報を含めて調整
                 response = await fetch('https://api.cohere.ai/v1/chat', {
                     method: 'POST',
                     headers: {
@@ -210,8 +308,8 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        message: messages[messages.length - 1]?.content,
-                        chat_history: messages.slice(0, -1).map(m => ({
+                        message: groundedMessages[groundedMessages.length - 1]?.content,
+                        chat_history: groundedMessages.slice(0, -1).map(m => ({
                             role: m.role === 'assistant' ? 'CHATBOT' : 'USER',
                             message: m.content
                         })),
@@ -231,7 +329,7 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        messages: messages,
+                        messages: groundedMessages,
                         temperature: tempValue,
                         stream: true
                     })
@@ -247,7 +345,7 @@ app.post('/api/chat', async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: targetModel,
-                        messages: messages,
+                        messages: groundedMessages,
                         temperature: tempValue,
                         stream: true
                     })
@@ -263,7 +361,7 @@ app.post('/api/chat', async (req, res) => {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        messages: messages,
+                        messages: groundedMessages,
                         stream: true
                     })
                 });
@@ -274,7 +372,7 @@ app.post('/api/chat', async (req, res) => {
             if (!response.ok) {
                 const errText = await response.text();
                 console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。次の代替プロバイダーへ移行します。エラー詳細:\n${errText}`);
-                continue; // 次のプロバイダーへ
+                continue; 
             }
 
             // ストリームのリアルタイム解析・送信
