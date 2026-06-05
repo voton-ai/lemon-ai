@@ -661,7 +661,10 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
+// Renderが指定するポート（process.env.PORT）を最優先にし、なければ3000を使う
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`===================================================`);
     console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
     console.log(` ポート: ${PORT}`);
