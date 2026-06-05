@@ -2,10 +2,9 @@
  * Voton Lemon AI - 7大プロバイダー対応・全AIリアルタイム検索フェイルオーバーサーバー (server.js)
  * * [特徴]
  * - フロントエンドの「index.html」を安全に配信します。
- * - 【NEW】すべてのAIプロバイダーで「現在日時」「リアルタイムWeb検索」を利用可能に！
- * - ユーザーが「最新情報」「〜について検索して」「今、何時？」といった質問をした場合、
- * サーバー側で無料のWeb検索（DuckDuckGo）を自動実行し、検索結果の要約をAIに渡して回答させます。
- * - 優先順位に基づき、あるAPIキーが上限に達したら自動で次のプロバイダーへ1秒未満で切り替えます（フェイルオーバー）。
+ * - すべてのAIプロバイダーで「現在日時」「リアルタイムWeb検索」を利用可能。
+ * - Web検索エンジン（DuckDuckGo）からより多くのテキストスニペットを抽出し、AIへの指示プロンプトを徹底強化。
+ * - AIに対して「検索結果の断片情報をそのまま繰り返すのではなく、背景知識や関連情報を交えて、深く、構造化された丁寧な長文回答を作成せよ」と制限。
  */
 
 const express = require('express');
@@ -80,8 +79,8 @@ const PROVIDER_MODELS = {
 };
 
 /**
- * 完全無料・キー不要の超軽量Web検索(DuckDuckGo HTML)スクレイパー
- * AIに最新情報を提供するための最低限のテキストスニペットを取得します
+ * 完全無料・キー不要のWeb検索(DuckDuckGo HTML)スクレイパー
+ * AIに最新情報を提供するための詳細なテキストスニペットを最大10件取得します
  */
 async function performWebSearch(query) {
     console.log(`[🔍 検索実行] クエリ: "${query}"`);
@@ -97,17 +96,19 @@ async function performWebSearch(query) {
 
         const html = await response.text();
         
-        // 正規表現を用いた軽量な検索結果パース（HTMLタグ除去 & スニペット抽出）
         const results = [];
+        // タイトル、URL、スニペットを極力広く収集
         const regex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
         let match;
         
-        while ((match = regex.exec(html)) !== null && results.length < 5) {
+        while ((match = regex.exec(html)) !== null && results.length < 8) {
             let snippet = match[1]
                 .replace(/<[^>]*>/g, '') // タグ除去
                 .replace(/\s+/g, ' ')    // 余白の統一
                 .trim();
-            results.push(snippet);
+            if (snippet) {
+                results.push(`[情報源 ${results.length + 1}]: ${snippet}`);
+            }
         }
 
         if (results.length === 0) {
@@ -131,17 +132,10 @@ async function processSearchGrounding(messages) {
     // 検索が必要な質問かどうかのパターンマッチング
     const searchKeywords = [
         "最新", "ニュース", "今日", "いま", "天気", "誰", "どこ", "何時", 
-        "2025", "2026", "検索", "調べて", "とは", "について", "価格", "株価"
+        "2025", "2026", "検索", "調べて", "とは", "について", "価格", "株価", "出来事", "トレンド"
     ];
 
     const needsSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
-
-    if (!needsSearch) {
-        return messages; // 検索不要ならそのまま
-    }
-
-    console.log(`[💡 検索インテント検知] Web検索バックグラウンド処理を開始します...`);
-    const searchResults = await performWebSearch(userMessage);
 
     // 取得した現在日時
     const now = new Date();
@@ -156,20 +150,35 @@ async function processSearchGrounding(messages) {
         weekday: 'long'
     }).format(now);
 
-    // 検索結果と現在の日時情報をユーザープロンプトの直前にコンテキストとして挿入
-    const groundedMessages = [...messages];
-    const systemInstructionIndex = groundedMessages.findIndex(m => m.role === 'system');
-
-    const groundingContext = `
-[ユーザーを支援するためのリアルタイム現在情報・コンテキスト]
+    let groundingContext = `
+[システム情報・コンテキスト]
 - 現在日時 (日本時間/JST): ${jstTime}
 - 現在地: 東京都江東区、日本
+`;
+
+    if (needsSearch) {
+        console.log(`[💡 検索インテント検知] Web検索バックグラウンド処理を開始します...`);
+        const searchResults = await performWebSearch(userMessage);
+        
+        groundingContext += `
 - 最新のWeb検索結果 (DuckDuckGo調べ):
 """
 ${searchResults}
 """
 
-上記の情報は100%正しい最新事実です。回答する際、AIの古い知識（知識カットオフ）よりも、上記の検索結果と現在日時を最優先し、最新の情報をベースに親切にニュートラルに回答を作成してください。`;
+【最重要指示】
+ユーザーは最新のリアルタイム情報を求めています。
+1. 上記の検索結果スニペット（事実情報）をベースにして、不足しているコンテキストや背景知識をあなたの高い思考力で補い、知的で丁寧なボリュームのある「詳細な解説」を作成してください。
+2. 決して一言や二言の簡素な回答で済ませてはいけません。要点を整理し、見出しや箇条書きなどを使って読みやすく充実したドキュメント風の回答を生成してください。
+3. 検索結果にない不確かな事柄を事実として断言することは避けつつ、事実に基づく論理的な解説を行ってください。
+`;
+    } else {
+        // 通常の会話であっても日時情報を認識させる
+        groundingContext += `\n現在時刻や日付に関する質問がある場合は、上記のシステム時間に基づいて正確に回答してください。`;
+    }
+
+    const groundedMessages = [...messages];
+    const systemInstructionIndex = groundedMessages.findIndex(m => m.role === 'system');
 
     if (systemInstructionIndex !== -1) {
         // システムプロンプトが存在する場合はそこにブレンド
@@ -299,7 +308,6 @@ app.post('/api/chat', async (req, res) => {
 
             } else if (prov.type === 'cohere') {
                 // --- Cohere API 接続処理 ---
-                // Cohereは最新メッセージのみを渡すため、メッセージ群をシステム情報を含めて調整
                 response = await fetch('https://api.cohere.ai/v1/chat', {
                     method: 'POST',
                     headers: {
@@ -387,7 +395,6 @@ app.post('/api/chat', async (req, res) => {
                 if (!cleanedLine) continue;
 
                 if (prov.type === 'gemini') {
-                    // --- Gemini用ストリームパーサー ---
                     if (cleanedLine.startsWith('[') || cleanedLine.startsWith(',') || cleanedLine.startsWith(']')) continue;
                     try {
                         const parsed = JSON.parse(cleanedLine.replace(/^,/, ''));
@@ -399,7 +406,6 @@ app.post('/api/chat', async (req, res) => {
                     } catch (e) {}
 
                 } else if (prov.type === 'cohere') {
-                    // --- Cohere用ストリームパーサー ---
                     try {
                         const parsed = JSON.parse(cleanedLine);
                         if (parsed.event_type === 'text-generation' && parsed.text) {
@@ -409,7 +415,6 @@ app.post('/api/chat', async (req, res) => {
                     } catch (e) {}
 
                 } else {
-                    // --- OpenAI互換用パーサー ---
                     if (cleanedLine === 'data: [DONE]') {
                         res.write('data: [DONE]\n\n');
                         continue;
