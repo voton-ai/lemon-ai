@@ -64,7 +64,6 @@
         .dark .tutorial-highlight {
             background-color: #0f172a !important;
         }
-        /* ふわふわ動くローディングアニメーション */
         @keyframes pulse-slow {
             0%, 100% { opacity: 0.4; transform: scale(0.98); }
             50% { opacity: 1; transform: scale(1); }
@@ -147,7 +146,6 @@
                         <span>回答の柔軟性</span>
                         <span id="temp-display-val" class="text-amber-600 dark:text-amber-400 font-mono">普通 (0.7)</span>
                     </div>
-                    <!-- 安全対策：崩壊を防ぐためスライダーの上限を1.0に制限 -->
                     <input type="range" id="temp-slider" min="0.1" max="1.0" step="0.1" value="0.7" oninput="updateTempDisplay()" class="w-full h-1.5 bg-amber-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500">
                     <div class="flex justify-between text-[9px] text-slate-400">
                         <span>論理的・正確</span>
@@ -213,45 +211,71 @@
                     <div class="space-y-2">
                         <h1 class="text-3xl font-black text-slate-800 dark:text-white tracking-tight">Voton Lemon AI</h1>
                         <p class="text-slate-500 dark:text-slate-400 text-sm font-semibold">
-                            完全無料・無制限・最新のGoogleリアルタイム検索に対応
+                            マルチモーダル画像解析＆最新AI画像生成機能を完全搭載
                         </p>
                     </div>
+                    
+                    <!-- 新機能ハイライト -->
                     <div class="grid grid-cols-2 gap-3 text-left">
                         <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
                             <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
-                                <i data-lucide="sliders" class="w-3.5 h-3.5"></i> 自由な調整
+                                <i data-lucide="image" class="w-3.5 h-3.5"></i> 画像を読み込ませる 🖼️
                             </span>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">左メニューからいつでもAIのアシスタント性格をカスタマイズ可能。</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">画像（写真やスクリーンショット）を直接貼り付けたり選択して、AIに詳しく解説・質問させることができます。</p>
                         </div>
                         <div class="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-amber-100 dark:border-slate-800 shadow-sm space-y-1">
                             <span class="text-xs font-bold text-amber-500 flex items-center gap-1">
-                                <i data-lucide="globe" class="w-3.5 h-3.5"></i> リアルタイム検索
+                                <i data-lucide="palette" class="w-3.5 h-3.5"></i> 高精細画像生成 🎨
                             </span>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">すべてのモデルで自動でリアルタイムWeb検索を行い、最新情報をもとに詳しく回答します。</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">「〜の画像を描いて」とチャットするだけで、Imagen 4 や SDXL エンジンが数秒でイラストを自動生成します。</p>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 画像アップロードプレビューエリア -->
+            <div id="image-preview-container" class="hidden px-4 md:px-8 py-3 bg-amber-50/20 dark:bg-slate-900/40 border-t border-amber-100/40 dark:border-slate-800 flex items-center gap-3">
+                <div class="relative w-16 h-16 rounded-xl border border-amber-200 dark:border-slate-700 overflow-hidden shadow">
+                    <img id="image-preview-img" class="w-full h-full object-cover" src="" alt="アップロードプレビュー">
+                    <button onclick="removeSelectedImage()" class="absolute -top-1 -right-1 p-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md transition-colors">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+                <div class="text-xs space-y-0.5">
+                    <p id="image-preview-name" class="font-bold text-slate-700 dark:text-slate-300 truncate max-w-xs">image.png</p>
+                    <p class="text-slate-400 dark:text-slate-500 text-[10px]">画像データ読み込み完了（マルチモーダル送信準備OK）</p>
                 </div>
             </div>
 
             <!-- 入力フォームエリア -->
             <footer class="p-4 border-t border-amber-100 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md sticky bottom-0 z-10" id="guide-input">
                 <div class="max-w-4xl mx-auto relative">
-                    <form id="chat-form" onsubmit="handleSendMessage(event)" class="relative bg-amber-50/50 dark:bg-slate-900 border border-amber-200 dark:border-slate-800 focus-within:border-yellow-400 focus-within:bg-white dark:focus-within:bg-slate-950 rounded-2xl shadow-lg transition-all overflow-hidden">
-                        <textarea 
-                            id="user-input" 
-                            rows="2"
-                            placeholder="何でも聞いてください... (Shift + Enter で改行)" 
-                            class="w-full pl-4 pr-16 py-3.5 bg-transparent border-0 outline-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm md:text-base resize-none"
-                            onkeydown="handleTextareaKeydown(event)"
-                        ></textarea>
+                    <form id="chat-form" onsubmit="handleSendMessage(event)" class="relative bg-amber-50/50 dark:bg-slate-900 border border-amber-200 dark:border-slate-800 focus-within:border-yellow-400 focus-within:bg-white dark:focus-within:bg-slate-950 rounded-2xl shadow-lg transition-all overflow-hidden flex flex-col">
                         
-                        <div class="absolute right-3 bottom-3 flex items-center gap-2">
-                            <button id="stop-btn" type="button" onclick="cancelGeneration()" class="hidden p-2 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/30 rounded-xl transition-all" title="出力を一時停止">
-                                <i data-lucide="square" class="w-5 h-5 fill-rose-500"></i>
+                        <!-- テキストエリアとアクションボタン -->
+                        <div class="flex items-end w-full relative">
+                            <!-- クリップボタン (画像添付) -->
+                            <button type="button" onclick="triggerImageUpload()" class="p-3 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors" title="画像を添付する">
+                                <i data-lucide="paperclip" class="w-5.5 h-5.5"></i>
                             </button>
-                            <button id="send-btn" type="submit" class="p-2.5 text-slate-900 bg-yellow-400 hover:bg-yellow-300 rounded-xl transition-all shadow-md shadow-yellow-200">
-                                <i data-lucide="send" class="w-5 h-5"></i>
-                            </button>
+                            <input type="file" id="image-file-input" class="hidden" accept="image/*" onchange="handleImageSelection(event)">
+
+                            <textarea 
+                                id="user-input" 
+                                rows="2"
+                                placeholder="質問を入力、または『〜の画像を作って』と指示... (ペーストでの画像入力も可能)" 
+                                class="flex-grow pl-1 pr-16 py-3.5 bg-transparent border-0 outline-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm md:text-base resize-none"
+                                onkeydown="handleTextareaKeydown(event)"
+                            ></textarea>
+                            
+                            <div class="absolute right-3 bottom-3 flex items-center gap-2">
+                                <button id="stop-btn" type="button" onclick="cancelGeneration()" class="hidden p-2 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/30 rounded-xl transition-all" title="出力を一時停止">
+                                    <i data-lucide="square" class="w-5 h-5 fill-rose-500"></i>
+                                </button>
+                                <button id="send-btn" type="submit" class="p-2.5 text-slate-900 bg-yellow-400 hover:bg-yellow-300 rounded-xl transition-all shadow-md shadow-yellow-200">
+                                    <i data-lucide="send" class="w-5 h-5"></i>
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -297,6 +321,9 @@
         let activeChatId = localStorage.getItem('voton_active_chat_id') || null;
         let isGenerating = false;
         let abortController = null;
+
+        // 画像アップロードステート
+        let selectedImageData = null; // { data: 'base64', mimeType: 'image/png', fileName: 'test.png' }
 
         let tutorialStep = 0;
         const tutorialSteps = [
@@ -351,6 +378,9 @@
             if (!hasVisited) {
                 startTutorial();
             }
+
+            // ペーストイベントの監視（クリップボードから画像貼り付け用）
+            document.addEventListener('paste', handleImagePaste);
         });
 
         function toggleTheme() {
@@ -460,6 +490,7 @@
 
             renderMessages();
             renderChatList();
+            removeSelectedImage(); // スレッド切り替え時に前のプレビューを削除
 
             if (window.innerWidth < 1024) {
                 const sidebar = document.getElementById('sidebar');
@@ -577,6 +608,15 @@
                 const contentColumn = document.createElement('div');
                 contentColumn.className = "flex-grow flex flex-col overflow-x-auto";
 
+                // アップロード画像のインライン表示
+                if (msg.attachedImage) {
+                    const imgEl = document.createElement('img');
+                    imgEl.src = `data:${msg.attachedImage.mimeType};base64,${msg.attachedImage.data}`;
+                    imgEl.className = "max-w-xs max-h-48 rounded-xl object-contain mb-3 border border-amber-100 dark:border-slate-800 shadow-sm cursor-zoom-in";
+                    imgEl.onclick = () => window.open(imgEl.src);
+                    contentColumn.appendChild(imgEl);
+                }
+
                 const textContainer = document.createElement('div');
                 textContainer.className = "text-xs md:text-sm leading-relaxed space-y-2 response-text-content";
                 
@@ -616,13 +656,68 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        // クリップボタンのトリガー
+        function triggerImageUpload() {
+            document.getElementById('image-file-input').click();
+        }
+
+        // ファイルダイアログからの画像選択
+        function handleImageSelection(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processAndPreviewImage(file);
+            }
+        }
+
+        // コピペによる画像貼り付け
+        function handleImagePaste(event) {
+            const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    processAndPreviewImage(file);
+                }
+            }
+        }
+
+        // 画像データのBase64化とプレビュー表示
+        function processAndPreviewImage(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const base64Data = e.target.result.split(',')[1];
+                selectedImageData = {
+                    data: base64Data,
+                    mimeType: file.type,
+                    fileName: file.name
+                };
+
+                // UIプレビューの表示
+                document.getElementById('image-preview-img').src = e.target.result;
+                document.getElementById('image-preview-name').innerText = file.name;
+                document.getElementById('image-preview-container').classList.remove('hidden');
+                
+                showToast('画像を読み込みました！', 'success');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // プレビューの削除
+        function removeSelectedImage() {
+            selectedImageData = null;
+            const container = document.getElementById('image-preview-container');
+            if (container) container.classList.add('hidden');
+            const fileInput = document.getElementById('image-file-input');
+            if (fileInput) fileInput.value = '';
+        }
+
         async function handleSendMessage(event) {
             if (event) event.preventDefault();
             if (isGenerating) return;
 
             const inputEl = document.getElementById('user-input');
             const messageText = inputEl.value ? inputEl.value.trim() : '';
-            if (!messageText) return;
+            if (!messageText && !selectedImageData) return;
 
             let chat = chats.find(c => c.id === activeChatId);
             if (!chat) {
@@ -636,18 +731,26 @@
             }
 
             if (!chat) {
-                showToast("有効なチャットが見つかりませんでした。再度お試しください。", "error");
+                showToast("有効なチャットが見つかりませんでした。", "error");
                 return;
             }
 
-            chat.messages.push({
+            // 新規メッセージオブジェクト
+            const userMsg = {
                 role: 'user',
-                content: messageText,
+                content: messageText || "(画像をアップロードしました)",
                 time: Date.now()
-            });
+            };
+
+            // 画像がある場合はメッセージに関連付ける
+            if (selectedImageData) {
+                userMsg.attachedImage = { ...selectedImageData };
+            }
+
+            chat.messages.push(userMsg);
 
             if (chat.title === '新しい会話') {
-                chat.title = messageText.length > 15 ? messageText.substring(0, 15) + '...' : messageText;
+                chat.title = messageText.length > 15 ? messageText.substring(0, 15) + '...' : (selectedImageData ? "添付画像スレッド" : "新しい会話");
             }
 
             inputEl.value = '';
@@ -657,25 +760,31 @@
             renderChatList();
             renderMessages();
 
-            // リアルタイム検索を求めているか簡易解析
-            const searchKeywords = [
-                "最新", "ニュース", "今日", "いま", "天気", "誰", "どこ", "何時", 
-                "2025", "2026", "検索", "調べて", "とは", "について", "価格", "株価", "出来事", "トレンド"
-            ];
+            // インテント判別
+            const isImageGen = ["画像を作って", "画像を生成", "イラストを描いて", "の絵を描いて", "のイラストを作って", "の画像を描いて", "draw a picture of", "generate an image of"].some(kw => messageText.includes(kw));
+            const searchKeywords = ["最新", "ニュース", "今日", "天気", "誰", "どこ", "何時", "2025", "2026", "検索", "調べて", "価格", "株価", "Qiita"];
             const isSearching = searchKeywords.some(kw => messageText.includes(kw));
 
             const aiMsgIndex = chat.messages.length;
             
-            // 初期の「考え中... / 検索中...」ステータス表示を仕込む
-            const initialLoadingHTML = isSearching
-                ? `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
+            // ローディングステータス表示
+            let initialLoadingHTML = '';
+            if (isImageGen) {
+                initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
+                     <i data-lucide="palette" class="w-4 h-4 text-pink-500 animate-bounce animate-spin"></i>
+                     <span>🎨 AI画像生成エンジンが作動中（約5秒かかります）...</span>
+                   </div>`;
+            } else if (isSearching) {
+                initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
                      <i data-lucide="search" class="w-4 h-4 text-amber-500 animate-spin"></i>
-                     <span>🔍 最新のWeb情報を検索して要約中...</span>
-                   </div>`
-                : `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
+                     <span>🔍 最新のWeb情報を検索して解析中...</span>
+                   </div>`;
+            } else {
+                initialLoadingHTML = `<div class="flex items-center gap-2.5 text-slate-500 dark:text-slate-400 font-bold animate-pulse-slow py-1">
                      <i data-lucide="loader" class="w-4 h-4 text-yellow-500 animate-spin"></i>
                      <span>🧠 回答を準備しています...</span>
                    </div>`;
+            }
 
             chat.messages.push({
                 role: 'assistant',
@@ -684,10 +793,14 @@
             });
             renderMessages();
 
-            await streamAIResponse(chat, aiMsgIndex, isSearching);
+            // 送信後、すぐにプレビューを削除
+            const currentImgPayload = selectedImageData ? { ...selectedImageData } : null;
+            removeSelectedImage();
+
+            await streamAIResponse(chat, aiMsgIndex, currentImgPayload);
         }
 
-        async function streamAIResponse(chat, aiMsgIndex, isSearching) {
+        async function streamAIResponse(chat, aiMsgIndex, imagePayload) {
             isGenerating = true;
             toggleButtonStates(true);
             abortController = new AbortController();
@@ -720,7 +833,8 @@
                     body: JSON.stringify({
                         modelKey: chat.modelKey || 'lemon-normal',
                         messages: chatPayload,
-                        temperature: chat.temperature !== undefined ? chat.temperature : 0.7
+                        temperature: chat.temperature !== undefined ? chat.temperature : 0.7,
+                        image: imagePayload // マルチモーダル画像ペイロード
                     }),
                     signal: abortController.signal
                 });
@@ -755,7 +869,6 @@
                                     throw new Error(parsed.error);
                                 }
                                 if (parsed.text) {
-                                    // 最初のトークンを受け取った瞬間にローディングを完全に消去
                                     if (!hasReceivedFirstChunk) {
                                         hasReceivedFirstChunk = true;
                                         accumulatedText = '';
@@ -795,11 +908,10 @@
             if (!lastMessageWrapper) return;
             const textEl = lastMessageWrapper.querySelector('.response-text-content');
             if (textEl) {
-                // 最初のプレーンテキスト/HTML判定
                 if (text.startsWith('<div')) {
-                    textEl.innerHTML = text; // ローディング表示中
+                    textEl.innerHTML = text; 
                 } else {
-                    textEl.innerHTML = marked.parse(text); // AIテキスト生成中
+                    textEl.innerHTML = marked.parse(text); 
                 }
             }
         }
