@@ -3,8 +3,8 @@
  * * [主な改善機能]
  * - ユーザーの「画像を作って」「〇〇を描いて」という指示を自動判別し、極めて親切で暖かみのある言葉遣いで返答。
  * - 万が一、Google/HuggingFace/OpenAIのAPIキーが無い・エラーになった場合でも、
- *   世界最高クラスの完全無料・キー不要の画像生成エンジン「Pollinations AI (FLUX.1ベース)」を稼働。
- *   これにより、いつでも・誰でも・キーなしで最高に美しい画像がその場で確実に生成されます！
+ * 世界最高クラスの完全無料・キー不要の画像生成エンジン「Pollinations AI (FLUX.1ベース)」を稼働。
+ * これにより、いつでも・誰でも・キーなしで最高に美しい画像がその場で確実に生成されます！
  */
 
 const express = require('express');
@@ -14,6 +14,9 @@ const readline = require('readline');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 🛑 共通通信タイムアウト（30秒に統一してNode.js v26 / Renderのハングアップを徹底防御）
+const TIMEOUT_MS = 30000;
 
 // --- 7大プロバイダーのAPIキーの環境変数ロード ---
 const KEYS = {
@@ -71,14 +74,20 @@ const PROVIDER_MODELS = {
  */
 async function fetchHeartRailsData(method, params = {}) {
     console.log(`[🚆 HeartRails Express API] メソッド: ${method}, パラメータ:`, params);
+    
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
     try {
         const queryParams = new URLSearchParams({ method, ...params }).toString();
         const url = `http://express.heartrails.com/api/json?${queryParams}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(id);
         if (!response.ok) return null;
         const data = await response.json();
         return data.response;
     } catch (e) {
+        clearTimeout(id);
         console.error("[❌ HeartRails エラー]", e);
         return null;
     }
@@ -97,6 +106,9 @@ async function fetchNHKProgramGuide(intent) {
     const service = intent.service || "g1"; // デフォルト: NHK総合1
     const date = intent.date || new Date().toISOString().split('T')[0];
 
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
     try {
         let url = "";
         if (intent.isRadio) {
@@ -114,7 +126,8 @@ async function fetchNHKProgramGuide(intent) {
         }
 
         console.log(`[📺 NHK Ver.3 APIリクエスト] URL: ${url}`);
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(id);
         if (!response.ok) {
             console.error(`[⚠️ NHK API応答エラー] ステータス: ${response.status}`);
             return null;
@@ -123,6 +136,7 @@ async function fetchNHKProgramGuide(intent) {
         const data = await response.json();
         return data;
     } catch (e) {
+        clearTimeout(id);
         console.error("[❌ NHK API 接続失敗]", e);
         return null;
     }
@@ -133,14 +147,20 @@ async function fetchNHKProgramGuide(intent) {
  */
 async function performWebSearch(query) {
     console.log(`[🔍 検索実行] クエリ: "${query}"`);
+    
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
     try {
         const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
         const response = await fetch(searchUrl, {
+            signal: controller.signal,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
 
+        clearTimeout(id);
         if (!response.ok) return "Web情報を検索できませんでした。";
 
         const html = await response.text();
@@ -160,8 +180,9 @@ async function performWebSearch(query) {
 
         return results.length === 0 ? "該当する検索結果が見つかりませんでした。" : results.join("\n\n");
     } catch (e) {
+        clearTimeout(id);
         console.error("[❌ 検索エラー] 検索処理中に例外が発生しました:", e);
-        return "検索に失敗しました。";
+        return "検索中にタイムアウトまたは接続エラーが発生しました。";
     }
 }
 
@@ -174,10 +195,13 @@ async function generateAIImage(prompt) {
     // 1. Google Gemini (Imagen 4)
     if (KEYS.gemini) {
         console.log(`[🎨 Imagen 4] Google Cloud Image Generation APIを呼び出します...`);
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${KEYS.gemini}`;
             const response = await fetch(url, {
                 method: 'POST',
+                signal: controller.signal,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     instances: [{ prompt: prompt }],
@@ -189,6 +213,7 @@ async function generateAIImage(prompt) {
                 })
             });
 
+            clearTimeout(id);
             if (response.ok) {
                 const result = await response.json();
                 const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
@@ -200,6 +225,7 @@ async function generateAIImage(prompt) {
                 console.warn(`[⚠️ Imagen 4 失敗] ステータス: ${response.status}. 代替エンジンへ移行します。`);
             }
         } catch (e) {
+            clearTimeout(id);
             console.error(`[❌ Imagen 4 エラー]`, e);
         }
     }
@@ -207,10 +233,13 @@ async function generateAIImage(prompt) {
     // 2. Hugging Face (Stable Diffusion XL)
     if (KEYS.huggingface) {
         console.log(`[🎨 SDXL] Hugging Face Inference APIを呼び出します...`);
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
             const url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
             const response = await fetch(url, {
                 method: 'POST',
+                signal: controller.signal,
                 headers: {
                     'Authorization': `Bearer ${KEYS.huggingface}`,
                     'Content-Type': 'application/json'
@@ -218,6 +247,7 @@ async function generateAIImage(prompt) {
                 body: JSON.stringify({ inputs: prompt })
             });
 
+            clearTimeout(id);
             if (response.ok) {
                 const buffer = await response.arrayBuffer();
                 const base64Data = Buffer.from(buffer).toString('base64');
@@ -227,6 +257,7 @@ async function generateAIImage(prompt) {
                 console.warn(`[⚠️ SDXL 失敗] ステータス: ${response.status}`);
             }
         } catch (e) {
+            clearTimeout(id);
             console.error(`[❌ SDXL エラー]`, e);
         }
     }
@@ -234,9 +265,12 @@ async function generateAIImage(prompt) {
     // 3. OpenAI DALL-E-3
     if (KEYS.openai) {
         console.log(`[🎨 DALL-E-3] OpenAI Image Generation APIを呼び出します...`);
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
             const response = await fetch('https://api.openai.com/v1/images/generations', {
                 method: 'POST',
+                signal: controller.signal,
                 headers: {
                     'Authorization': `Bearer ${KEYS.openai}`,
                     'Content-Type': 'application/json'
@@ -250,6 +284,7 @@ async function generateAIImage(prompt) {
                 })
             });
 
+            clearTimeout(id);
             if (response.ok) {
                 const result = await response.json();
                 const base64Data = result?.data?.[0]?.b64_json;
@@ -259,6 +294,7 @@ async function generateAIImage(prompt) {
                 }
             }
         } catch (e) {
+            clearTimeout(id);
             console.error(`[❌ DALL-E-3 エラー]`, e);
         }
     }
@@ -368,10 +404,14 @@ ${delaySearch}
         console.log("[💡 地図インテントを検出]");
         const placeMatch = userMessage.replace(/(の地図|のマップ|を見せて|はどこ|地図|マップ)/g, "").trim();
         if (placeMatch.length > 1) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
             try {
                 const mapResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeMatch)}&format=json&limit=1`, {
+                    signal: controller.signal,
                     headers: { 'User-Agent': 'VotonLemonAI/1.2.0' }
                 });
+                clearTimeout(id);
                 if (mapResponse.ok) {
                     const mapData = await mapResponse.json();
                     if (mapData && mapData[0]) {
@@ -389,6 +429,7 @@ ${delaySearch}
                     }
                 }
             } catch (e) {
+                clearTimeout(id);
                 console.error("[❌ 地図検索失敗]", e);
             }
         }
@@ -400,8 +441,11 @@ ${delaySearch}
         const zipMatch = userMessage.match(/\d{3}-\d{4}/) || userMessage.match(/\d{7}/) || [null];
         const zipCode = zipMatch[0] ? zipMatch[0].replace("-", "") : null;
         if (zipCode) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
             try {
-                const zipResponse = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipCode}`);
+                const zipResponse = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipCode}`, { signal: controller.signal });
+                clearTimeout(id);
                 if (zipResponse.ok) {
                     const zipData = await zipResponse.json();
                     apiContext += `
@@ -412,6 +456,7 @@ ${JSON.stringify(zipData, null, 2)}
 `;
                 }
             } catch (e) {
+                clearTimeout(id);
                 console.error("[❌ 郵便番号検索失敗]", e);
             }
         }
@@ -515,6 +560,10 @@ app.post('/api/chat', async (req, res) => {
         const targetModel = PROVIDER_MODELS[prov.type]?.[modelKey] || PROVIDER_MODELS[prov.type]?.['lemon-normal'] || 'gpt-4o-mini';
 
         console.log(`\n--- [🔄 試行 ${i + 1}/${activeProviders.length}] プロバイダー: ${prov.name} ---`);
+        
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
         try {
             let response;
 
@@ -534,6 +583,7 @@ app.post('/api/chat', async (req, res) => {
 
                 response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: {
                         'Authorization': `Bearer ${prov.key}`,
                         'Content-Type': 'application/json'
@@ -577,6 +627,7 @@ app.post('/api/chat', async (req, res) => {
 
                 response = await fetch(geminiUrl, {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
@@ -588,6 +639,7 @@ app.post('/api/chat', async (req, res) => {
 
                 response = await fetch(baseUrl, {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: {
                         'Authorization': `Bearer ${prov.key}`,
                         'Content-Type': 'application/json'
@@ -600,6 +652,8 @@ app.post('/api/chat', async (req, res) => {
                     })
                 });
             }
+
+            clearTimeout(id);
 
             if (!response.ok) {
                 console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。次のプロバイダーに移行します。`);
@@ -646,6 +700,7 @@ app.post('/api/chat', async (req, res) => {
             break;
 
         } catch (error) {
+            clearTimeout(id);
             console.error(`[❌ 接続失敗] ${prov.name} 例外発生:`, error);
         }
     }
@@ -661,12 +716,10 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Renderが指定するポート（process.env.PORT）を最優先にし、なければ3000を使う
-
-
+// Renderのポート自動割り当て（process.env.PORT）と「0.0.0.0」バインドを確実な文法で結合
 app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
     console.log(`===================================================`);
     console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
-    console.log(` ポート: ${PORT}`);
+    console.log(` ポート: ${process.env.PORT || 3000}`);
     console.log(`===================================================`);
 });
