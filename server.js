@@ -88,7 +88,7 @@ async function fetchHeartRailsData(method, params = {}) {
         return data.response;
     } catch (e) {
         clearTimeout(id);
-        console.error("[❌ HeartRails エラー]", e);
+        console.error("[❌ HeartRails エラー]", e.message);
         return null;
     }
 }
@@ -102,8 +102,8 @@ async function fetchNHKProgramGuide(intent) {
         return null;
     }
 
-    const area = intent.area || "130"; // デフォルト: 東京
-    const service = intent.service || "g1"; // デフォルト: NHK総合1
+    const area = intent.area || "130"; 
+    const service = intent.service || "g1"; 
     const date = intent.date || new Date().toISOString().split('T')[0];
 
     const controller = new AbortController();
@@ -137,7 +137,7 @@ async function fetchNHKProgramGuide(intent) {
         return data;
     } catch (e) {
         clearTimeout(id);
-        console.error("[❌ NHK API 接続失敗]", e);
+        console.error("[❌ NHK API 接続失敗]", e.message);
         return null;
     }
 }
@@ -226,7 +226,7 @@ async function generateAIImage(prompt) {
             }
         } catch (e) {
             clearTimeout(id);
-            console.error(`[❌ Imagen 4 エラー]`, e);
+            console.error(`[❌ Imagen 4 エラー]`, e.message);
         }
     }
 
@@ -258,7 +258,7 @@ async function generateAIImage(prompt) {
             }
         } catch (e) {
             clearTimeout(id);
-            console.error(`[❌ SDXL エラー]`, e);
+            console.error(`[❌ SDXL エラー]`, e.message);
         }
     }
 
@@ -295,7 +295,7 @@ async function generateAIImage(prompt) {
             }
         } catch (e) {
             clearTimeout(id);
-            console.error(`[❌ DALL-E-3 エラー]`, e);
+            console.error(`[❌ DALL-E-3 エラー]`, e.message);
         }
     }
 
@@ -374,7 +374,7 @@ ${searchResults}
                 heartRailsResult = await fetchHeartRailsData("getStations", { line: lineName });
             }
         } else if (userMessage.includes("近く") || userMessage.includes("最寄")) {
-            heartRailsResult = await fetchHeartRailsData("getStations", { x: "139.7961", y: "35.6548" }); // 豊洲駅付近
+            heartRailsResult = await fetchHeartRailsData("getStations", { x: "139.7961", y: "35.6548" }); 
         }
 
         if (heartRailsResult) {
@@ -430,7 +430,7 @@ ${delaySearch}
                 }
             } catch (e) {
                 clearTimeout(id);
-                console.error("[❌ 地図検索失敗]", e);
+                console.error("[❌ 地図検索失敗]", e.message);
             }
         }
     }
@@ -457,7 +457,7 @@ ${JSON.stringify(zipData, null, 2)}
                 }
             } catch (e) {
                 clearTimeout(id);
-                console.error("[❌ 郵便番号検索失敗]", e);
+                console.error("[❌ 郵便番号検索失敗]", e.message);
             }
         }
     }
@@ -516,11 +516,9 @@ app.post('/api/chat', async (req, res) => {
     if (isImageGenerationIntent) {
         console.log("[💡 画像生成インテントを検知しました]");
         try {
-            // プロンプトの抽出（末尾トリガーを削除）
             const cleanedPrompt = userMessage.replace(/(の画像を生成して|の画像を作って|の絵を描いて|のイラストを作って|画像を生成して|画像を作って|絵を描いて|イラストを描いて)/g, "").trim();
             const imageUrl = await generateAIImage(cleanedPrompt || "A cute red panda in a forest, high quality");
             
-            // ユーザーに寄り添った、あたたかみのある親切なメッセージを動的に作成
             const chatReplies = [
                 `🎨 リクエストいただいた「${cleanedPrompt || "レッサーパンダ"}」のイメージを描いてみました！いかがでしょうか？ふんわりと愛らしく仕上げました。お気に召すと嬉しいです！✨\n\n![Generated Image](${imageUrl})`,
                 `🍀 お待たせしました！「${cleanedPrompt || "レッサーパンダ"}」の素敵なイラストが完成しました。細部まで丁寧に仕上げています。どうぞお楽しみくださいね！🖌️\n\n![Generated Image](${imageUrl})`,
@@ -655,8 +653,17 @@ app.post('/api/chat', async (req, res) => {
 
             clearTimeout(id);
 
+            // 🛑 エラー詳細出力の強化
             if (!response.ok) {
+                let errorDetails = '';
+                try {
+                    // 各AIプロバイダーからエラーメッセージ（JSON）を取得
+                    errorDetails = await response.text();
+                } catch (_) {
+                    errorDetails = '詳細なエラー情報をパースできませんでした。';
+                }
                 console.warn(`[⚠️ 警告] ${prov.name} がエラーを返しました。次のプロバイダーに移行します。`);
+                console.warn(`👉 [HTTP ${response.status}]: ${errorDetails}\n`);
                 continue; 
             }
 
@@ -701,12 +708,13 @@ app.post('/api/chat', async (req, res) => {
 
         } catch (error) {
             clearTimeout(id);
+            // 🛑 ネットワーク障害やタイムアウト時の生例外を詳細にコンソール出力
             console.error(`[❌ 接続失敗] ${prov.name} 例外発生:`, error);
         }
     }
 
     if (!isSuccess) {
-        res.write(`data: ${JSON.stringify({ error: 'すべてのプロバイダーが制限に達したため、一時的に通信できません。' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'すべてのプロバイダーが制限に達したか通信エラーが発生したため、一時的に応答を生成できません。' })}\n\n`);
         res.end();
     }
 });
@@ -716,7 +724,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Renderのポート自動割り当て（process.env.PORT）と「0.0.0.0」バインドを確実な文法で結合
+// Renderのポート自動割り当て設定
 app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
     console.log(`===================================================`);
     console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
