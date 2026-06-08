@@ -371,19 +371,28 @@ app.post('/api/chat', async (req, res) => {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// Renderの仕様に100%最適化させた起動設定
-const server = app.listen(PORT, '0.0.0.0', () => {
+// --- 🛑 Render用のポート解決とサーバー起動設定（502エラー徹底防御版） ---
+// Renderは通常 10000 を割り当てますが、念のため文字列ではなく確実に数値型（Int）に変換します
+const listenPort = parseInt(process.env.PORT, 10) || 10000;
+
+const server = app.listen(listenPort, '0.0.0.0', () => {
     console.log(`===================================================`);
-    console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
-    console.log(` ポート: ${PORT}`);
+    console.log(` 🎉 Voton Lemon AI 正常起動完了！`);
+    console.log(` 🚀 起動ポート: ${listenPort}`);
+    console.log(` 🌐 ネットワークアドレス: 0.0.0.0 (Render最適化)`);
     console.log(`===================================================`);
 });
 
-// Renderのシグナル終了（デプロイ時の入れ替え）をエレガントにハンドリングしてエラー終了を防ぐ
+// ポート競合や予期せぬ起動エラーをコンソールに即座に吐き出す設定
+server.on('error', (error) => {
+    console.error(' [❌ サーバー起動エラー]:', error);
+});
+
+// Renderのコンテナ入れ替え（デプロイ）時のシグナルをエレガントに終了させて502を防御
 process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
+    console.log('SIGTERMを受け取りました。サーバーを安全にシャットダウンします。');
     server.close(() => {
-        console.log('HTTP server closed');
+        console.log('HTTP サーバーを閉じました。');
         process.exit(0);
     });
 });
