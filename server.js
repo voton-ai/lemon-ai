@@ -371,9 +371,19 @@ app.post('/api/chat', async (req, res) => {
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Renderの仕様に100%最適化させた起動設定
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`===================================================`);
     console.log(` Voton Lemon AI (高精細・不死身画像生成版) が起動しました。`);
     console.log(` ポート: ${PORT}`);
     console.log(`===================================================`);
+});
+
+// Renderのシグナル終了（デプロイ時の入れ替え）をエレガントにハンドリングしてエラー終了を防ぐ
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+    });
 });
